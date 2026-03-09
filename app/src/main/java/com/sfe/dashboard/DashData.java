@@ -32,12 +32,13 @@ public class DashData {
 
     // ── MODE 22 ECU (AT SH 7E0) ──────────────────────────────────
     public volatile float oilTempC      = 43f;
+    public volatile float catTempC       = 400f;  // °C — catalyst temp bank 1
     public volatile float knockCorr     = 0f;    // degrees, negative = retard
     public volatile float rough1        = 0.2f;
     public volatile float rough2        = 0.1f;
     public volatile float rough3        = 0.3f;
     public volatile float rough4        = 0.1f;
-    public volatile float wastegatePos  = 0f;    // %
+    public volatile float wastegatePct  = 0f;    // %
     public volatile float ocvIntakeL    = 20f;   // % duty
     public volatile float ocvIntakeR    = 20f;
     public volatile float ocvExhL       = 35f;
@@ -61,6 +62,7 @@ public class DashData {
     public float speedMph()     { return speedKph * 0.621371f; }
     public float coolantF()     { return coolantC  * 9f/5f + 32f; }
     public float oilTempF()     { return oilTempC  * 9f/5f + 32f; }
+    public float catTempF()  { return catTempC * 9f/5f + 32f; }
     public float cvtTempF()     { return cvtTempC  * 9f/5f + 32f; }
     public float battTempF()    { return battTempC * 9f/5f + 32f; }
     public float mapPsi()       { return mapKpa     / 6.89476f; }
