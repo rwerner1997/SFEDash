@@ -37,6 +37,7 @@ public class DashView extends SurfaceView implements SurfaceHolder.Callback {
     // ── Engine animation ─────────────────────────────────────────
     private float  engAngle = 0f;
     private long   engLastMs = 0;
+    private float  engRpmSmooth = 820f;
     private static final float[] CYL_PH = {0f, (float)(Math.PI*1.5), (float)Math.PI, (float)(Math.PI*0.5)};
     private static final float[] FA20_PHASE = {0f, (float)Math.PI, (float)(Math.PI*0.5), (float)(Math.PI*1.5)};
 
@@ -320,7 +321,9 @@ public class DashView extends SurfaceView implements SurfaceHolder.Callback {
         void setRunning(boolean r) { running = r; }
 
         @Override public void run() {
+            final long TARGET_MS = 33; // ~30fps
             while (running) {
+                long frameStart = System.currentTimeMillis();
                 Canvas c = null;
                 try {
                     // Try hardware canvas first (GPU), fall back to software
@@ -343,7 +346,12 @@ public class DashView extends SurfaceView implements SurfaceHolder.Callback {
                     try { if (c != null) holder.unlockCanvasAndPost(c); }
                     catch (Exception ignored) {}
                 }
-                try { Thread.sleep(33); } catch (Exception ignored) {}
+                // Sleep only the remaining time in the frame budget
+                long elapsed = System.currentTimeMillis() - frameStart;
+                long sleep = TARGET_MS - elapsed;
+                if (sleep > 0) {
+                    try { Thread.sleep(sleep); } catch (Exception ignored) {}
+                }
             }
         }
     }
@@ -400,8 +408,11 @@ public class DashView extends SurfaceView implements SurfaceHolder.Callback {
         if (engLastMs == 0) { engLastMs = now; return; }
         float dt = (now - engLastMs) / 1000f;
         engLastMs = now;
+        dt = Math.min(dt, 0.050f); // cap at 50ms — prevents jump after GC pause
         float rpm = DashData.get().rpm;
-        engAngle += rpm / 60f * (float)(Math.PI * 2) * dt;
+        // Smooth RPM changes so animation doesn't jerk when OBD value updates
+        engRpmSmooth += (rpm - engRpmSmooth) * Math.min(1f, dt * 4f);
+        engAngle += engRpmSmooth / 60f * (float)(Math.PI * 2) * dt;
     }
 
     // ── G-force update ────────────────────────────────────────────
@@ -890,10 +901,11 @@ public class DashView extends SurfaceView implements SurfaceHolder.Callback {
         c.drawCircle(crankX, crankY, CR+10, fillP);
         strokeP.setColor(t.border); strokeP.setStyle(Paint.Style.STROKE); strokeP.setStrokeWidth(1.5f);
         c.drawCircle(crankX, crankY, CR+10, strokeP);
-        fillP.setColor(ac(t.accent,0.18f)); c.drawCircle(crankX, crankY, 7, fillP);
+        fillP.setColor(ac(t.accent,0.18f)); fillP.setAlpha(46); c.drawCircle(crankX, crankY, 7, fillP); fillP.setAlpha(255);
         strokeP.setColor(t.accent); strokeP.setStrokeWidth(1f);
         c.drawCircle(crankX, crankY, 7, strokeP);
-        glowDot(c, crankX, crankY, 3, t.accent);
+        // Solid dot — no glow layers to reduce flicker
+        fillP.setColor(t.accent); fillP.setAlpha(255); c.drawCircle(crankX, crankY, 3, fillP);
 
         // Crank webs
         for (float off : new float[]{0f, (float)Math.PI}) {
