@@ -522,4 +522,73 @@ public class OBDManager {
         data.battTempC = a - 40f;
     }
 
-    private void pars
+    private void parseAltDuty(String r) {
+        if (isError(r)) return;
+        int a = m22byte(r, 0); if (a < 0) return;
+        data.altDutyPct = a / 255f * 100f;
+    }
+
+    private void parseFuelPump(String r) {
+        if (isError(r)) return;
+        int a = m22byte(r, 0); if (a < 0) return;
+        data.fuelPumpPct = a / 255f * 100f;
+    }
+
+    // ── Mode 22 TCU parsers ────────────────────────────────────────
+
+    private void parseCVTTemp(String r) {
+        if (isError(r)) return;
+        int a = m22byte(r, 0); if (a < 0) return;
+        data.cvtTempC = a * 0.5f - 40f;
+    }
+
+    private void parseLockup(String r) {
+        if (isError(r)) return;
+        int a = m22byte(r, 0); if (a < 0) return;
+        data.lockupPct = a / 255f * 100f;
+    }
+
+    private void parseTransfer(String r) {
+        if (isError(r)) return;
+        int a = m22byte(r, 0); if (a < 0) return;
+        data.transferPct = a / 255f * 100f;
+    }
+
+    private void parseTurbineRpm(String r) {
+        if (isError(r)) return;
+        int v = m22word(r); if (v < 0) return;
+        data.turbineRpm = v / 4f;
+    }
+
+    private void parsePrimaryRpm(String r) {
+        if (isError(r)) return;
+        int v = m22word(r); if (v < 0) return;
+        data.primaryRpm = v / 4f;
+    }
+
+    private void parseSecondaryRpm(String r) {
+        if (isError(r)) return;
+        int v = m22word(r); if (v < 0) return;
+        data.secondaryRpm = v / 4f;
+    }
+
+    private void parseGearRatioAct(String r) {
+        if (isError(r)) return;
+        int v = m22word(r); if (v < 0) return;
+        data.gearRatioAct = v / 1000f;
+    }
+
+    private void parseGearRatioTgt(String r) {
+        if (isError(r)) return;
+        int v = m22word(r); if (v < 0) return;
+        data.gearRatioTgt = v / 1000f;
+    }
+
+    // ── Utility ───────────────────────────────────────────────────
+
+    private void sleep(long ms) {
+        try { Thread.sleep(ms); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+    }
+
+    public boolean isConnected() { return data.connected; }
+}
