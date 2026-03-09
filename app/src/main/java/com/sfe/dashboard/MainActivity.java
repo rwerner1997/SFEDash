@@ -1,6 +1,7 @@
 package com.sfe.dashboard;
 
 import android.Manifest;
+import android.app.Activity;
 import android.bluetooth.BluetoothAdapter;
 import android.content.Intent;
 import android.content.pm.PackageManager;
@@ -8,9 +9,9 @@ import android.os.Build;
 import android.os.Bundle;
 import android.view.*;
 import android.widget.*;
-import androidx.appcompat.app.AppCompatActivity;
-import androidx.core.app.ActivityCompat;
-import androidx.core.content.ContextCompat;
+
+
+
 
 /**
  * MainActivity — full-screen dashboard with two software buttons.
@@ -24,7 +25,7 @@ import androidx.core.content.ContextCompat;
  *   Short tap  → next page  (or dismiss alert if one is showing)
  *   Long press → toggle drive mode
  */
-public class MainActivity extends AppCompatActivity {
+public class MainActivity extends Activity {
 
     private DashView  dashView;
     private OBDManager obdManager;
@@ -207,16 +208,16 @@ public class MainActivity extends AppCompatActivity {
             };
             boolean needsRequest = false;
             for (String p : perms) {
-                if (ContextCompat.checkSelfPermission(this, p) != PackageManager.PERMISSION_GRANTED) {
+                if (checkSelfPermission( p) != PackageManager.PERMISSION_GRANTED) {
                     needsRequest = true; break;
                 }
             }
-            if (needsRequest) ActivityCompat.requestPermissions(this, perms, PERM_REQUEST);
+            if (needsRequest) requestPermissions( perms, PERM_REQUEST);
         } else {
             String[] perms = { Manifest.permission.ACCESS_FINE_LOCATION };
-            if (ContextCompat.checkSelfPermission(this, Manifest.permission.ACCESS_FINE_LOCATION)
+            if (checkSelfPermission( Manifest.permission.ACCESS_FINE_LOCATION)
                     != PackageManager.PERMISSION_GRANTED) {
-                ActivityCompat.requestPermissions(this, perms, PERM_REQUEST);
+                requestPermissions( perms, PERM_REQUEST);
             }
         }
     }
