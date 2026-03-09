@@ -34,8 +34,9 @@ public class OBDManager {
     private static final UUID  SPP_UUID = UUID.fromString("00001101-0000-1000-8000-00805F9B34FB");
     private static final String TARGET_DEVICE_NAME = "OBDII";
 
-    private static final int CMD_TIMEOUT_MS  = 1500;  // per-command timeout
-    private static final int CONNECT_RETRY_S = 5;     // seconds between reconnect attempts
+    private static final int CMD_TIMEOUT_MS   = 1200; // per-command timeout (normal)
+    private static final int CMD_TIMEOUT_SLOW = 600;  // for slow/optional Mode 22 PIDs
+    private static final int CONNECT_RETRY_S  = 5;    // seconds between reconnect attempts
 
     private final Context    ctx;
     private final DashData   data;
@@ -234,79 +235,99 @@ public class OBDManager {
     private void pollLoop() throws IOException {
         long lastHz = System.currentTimeMillis();
         int hzCount = 0;
-        // Set ECU header once at start
+        int loopCount = 0;
         String currentHeader = "";
 
         while (running.get() && data.connected) {
             long t0 = System.currentTimeMillis();
 
-            // ── MODE 01 — standard PIDs (no header needed) ────────
+            // ════════════════════════════════════════════════════
+            // TIER 1 — FAST: every loop (~10-15Hz)
+            // RPM, Speed, MAP(boost), Pedal — must be responsive
+            // ════════════════════════════════════════════════════
             if (!currentHeader.isEmpty()) {
-                sendCmd("ATSH7E8"); // Reset to default response header
-                // Actually with ATH0 and ATSP0 the adapter handles routing
-                // We just need to clear the custom header
-                sendCmd("ATSH7DF"); // broadcast address — responses from all ECUs
+                sendCmd("ATSHFFF");    // clear custom header — back to default broadcast
                 currentHeader = "";
             }
-
             parseRPM(sendCmd("010C"));
             parseSpeed(sendCmd("010D"));
-            parseThrottle(sendCmd("0111"));
-            parseLoad(sendCmd("0104"));
-            parseCoolant(sendCmd("0105"));
-            parseTiming(sendCmd("010E"));
-            parseMAF(sendCmd("0110"));
             parseMAP(sendCmd("010B"));
-            parseSTFT(sendCmd("0106"));
-            parseLTFT(sendCmd("0107"));
-            parseBattery(sendCmd("ATRV"));   // ELM battery voltage
+            parsePedal(sendCmd("0149"));   // commanded throttle = pedal intent (drive-by-wire)
+            parseCatTemp(sendCmd("013C")); // catalyst temp bank 1 sensor 1 (Mode 01 PID 84)
 
-            // ── MODE 22 ECU — AT SH 7E0 ──────────────────────────
-            if (!"7E0".equals(currentHeader)) {
+            // ════════════════════════════════════════════════════
+            // TIER 2 — MEDIUM: every 3rd loop (~3-5Hz)
+            // Engine vitals, fuel trim, knock
+            // ════════════════════════════════════════════════════
+            if (loopCount % 3 == 0) {
+                parseLoad(sendCmd("0104"));
+                parseCoolant(sendCmd("0105"));
+                parseTiming(sendCmd("010E"));
+                parseMAF(sendCmd("0110"));
+                parseSTFT(sendCmd("0106"));
+                parseLTFT(sendCmd("0107"));
+
+                // Knock and wastegate — ECU header needed
                 sendCmd("ATSH7E0");
                 currentHeader = "7E0";
+                parseKnockCorr(sendCmdTimeout("223018", CMD_TIMEOUT_SLOW));
+                parseWastegate(sendCmdTimeout("2210C9", CMD_TIMEOUT_SLOW));
             }
-            parseOilTemp(sendCmd("2210AF"));
-            parseKnockCorr(sendCmd("223018"));
-            parseRoughness(sendCmd("223062"), 1);
-            parseRoughness(sendCmd("223048"), 2);
-            parseRoughness(sendCmd("223068"), 3);
-            parseRoughness(sendCmd("22304A"), 4);
-            parseOcvIntakeL(sendCmd("2210BB"));
-            parseOcvIntakeR(sendCmd("22109B"));
-            parseOcvExhL(sendCmd("2210EF"));
-            parseOcvExhR(sendCmd("2210CF"));
-            parseTargetMAP(sendCmd("223050"));
-            parseBattTemp(sendCmd("22309A"));
-            parseAltDuty(sendCmd("221093"));
-            parseFuelPump(sendCmd("2210B3"));
 
-            // ── MODE 22 TCU — AT SH 7E1 ──────────────────────────
-            if (!"7E1".equals(currentHeader)) {
-                sendCmd("ATSH7E1");
-                currentHeader = "7E1";
+            // ════════════════════════════════════════════════════
+            // TIER 3 — SLOW: every 10th loop (~1Hz)
+            // Temps, AVCS, TCU, accessories
+            // ════════════════════════════════════════════════════
+            // ════════════════════════════════════════════════════
+            // TIER 3a — ECU slow: every 10th loop (~1Hz)
+            // ════════════════════════════════════════════════════
+            if (loopCount % 10 == 0) {
+                parseBaro(sendCmd("0133"));
+                parseBattery(sendCmd("ATRV"));
+
+                if (!"7E0".equals(currentHeader)) { sendCmd("ATSH7E0"); currentHeader = "7E0"; }
+                parseOilTemp(sendCmdTimeout("2210AF", CMD_TIMEOUT_SLOW));
+                parseRoughness(sendCmdTimeout("223062", CMD_TIMEOUT_SLOW), 1);
+                parseRoughness(sendCmdTimeout("223048", CMD_TIMEOUT_SLOW), 2);
+                parseRoughness(sendCmdTimeout("223068", CMD_TIMEOUT_SLOW), 3);
+                parseRoughness(sendCmdTimeout("22304A", CMD_TIMEOUT_SLOW), 4);
+                parseOcvIntakeL(sendCmdTimeout("2210BB", CMD_TIMEOUT_SLOW));
+                parseOcvIntakeR(sendCmdTimeout("22109B", CMD_TIMEOUT_SLOW));
+                parseOcvExhL(sendCmdTimeout("2210EF", CMD_TIMEOUT_SLOW));
+                parseOcvExhR(sendCmdTimeout("2210CF", CMD_TIMEOUT_SLOW));
+                parseTargetMAP(sendCmdTimeout("223050", CMD_TIMEOUT_SLOW));
+                parseBattTemp(sendCmdTimeout("22309A", CMD_TIMEOUT_SLOW));
+                parseAltDuty(sendCmdTimeout("221093", CMD_TIMEOUT_SLOW));
+                parseFuelPump(sendCmdTimeout("2210B3", CMD_TIMEOUT_SLOW));
             }
-            parseCVTTemp(sendCmd("221017"));
-            parseLockup(sendCmd("221045"));
-            parseTransfer(sendCmd("221065"));
-            parseTurbineRpm(sendCmd("221067"));
-            parsePrimaryRpm(sendCmd("22300E"));
-            parseSecondaryRpm(sendCmd("2230D0"));
-            parseGearRatioAct(sendCmd("2230DA"));
-            parseGearRatioTgt(sendCmd("2230F8"));
 
-            // ── Update peaks ──────────────────────────────────────
+            // ════════════════════════════════════════════════════
+            // TIER 3b — TCU slow: every 10th loop, offset by 5
+            // Staggered so TCU never waits behind the full ECU block
+            // ════════════════════════════════════════════════════
+            if (loopCount % 10 == 5) {
+                sendCmd("ATSH7E1"); currentHeader = "7E1";
+                parseCVTTemp(sendCmdTimeout("221017", CMD_TIMEOUT_SLOW));
+                parseLockup(sendCmdTimeout("221045", CMD_TIMEOUT_SLOW));
+                parseTransfer(sendCmdTimeout("221065", CMD_TIMEOUT_SLOW));
+                parseTurbineRpm(sendCmdTimeout("221067", CMD_TIMEOUT_SLOW));
+                parsePrimaryRpm(sendCmdTimeout("22300E", CMD_TIMEOUT_SLOW));
+                parseSecondaryRpm(sendCmdTimeout("2230D0", CMD_TIMEOUT_SLOW));
+                parseGearRatioAct(sendCmdTimeout("2230DA", CMD_TIMEOUT_SLOW));
+                parseGearRatioTgt(sendCmdTimeout("2230F8", CMD_TIMEOUT_SLOW));
+            }
+
             data.updatePeaks();
             data.recordKnockEvent();
 
-            // ── Hz tracking ───────────────────────────────────────
-            hzCount++;
+            loopCount++;
             long now = System.currentTimeMillis();
             if (now - lastHz >= 1000) {
                 data.pollHz = hzCount;
                 hzCount = 0;
                 lastHz = now;
             }
+            hzCount++;
             data.lastPollMs = System.currentTimeMillis() - t0;
         }
     }
@@ -319,6 +340,14 @@ public class OBDManager {
         outStream.write((cmd + "\r").getBytes());
         outStream.flush();
         return readUntilPrompt(CMD_TIMEOUT_MS);
+    }
+
+    /** Send a command with a custom timeout — use for slow/optional PIDs */
+    private String sendCmdTimeout(String cmd, int timeoutMs) throws IOException {
+        if (outStream == null) throw new IOException("Not connected");
+        outStream.write((cmd + "\r").getBytes());
+        outStream.flush();
+        return readUntilPrompt(timeoutMs);
     }
 
     /** Write raw bytes without reading response */
@@ -365,8 +394,12 @@ public class OBDManager {
     private String strip(String r) { return r.replace(" ", ""); }
 
     private boolean isError(String r) {
-        return r.isEmpty() || r.contains("NODATA") || r.contains("ERROR")
-               || r.contains("UNABLE") || r.contains("?") || r.contains("STOPPED");
+        if (r == null || r.isEmpty()) return true;
+        String u = r.toUpperCase();
+        return u.contains("NODATA") || u.contains("NO DATA") || u.contains("ERROR")
+               || u.contains("UNABLE") || u.contains("?") || u.contains("STOPPED")
+               || u.contains("BUSBUSY") || u.contains("BUS BUSY")
+               || (u.contains("7F") && u.contains("31")); // negative response frame
     }
 
     // ── Mode 01 parsers ───────────────────────────────────────────
@@ -385,7 +418,9 @@ public class OBDManager {
         data.speedKph = a;
     }
 
-    private void parseThrottle(String r) {
+    private void parsePedal(String r) {
+        // PID 0149 = Commanded throttle actuator (tracks pedal intent in drive-by-wire)
+        // Falls back gracefully — if not supported, value stays at last known
         r = strip(r); if (isError(r) || r.length() < 6) return;
         int a = byteAt(r, 2); if (a < 0) return;
         data.throttlePct = a / 255f * 100f;
@@ -420,8 +455,13 @@ public class OBDManager {
         r = strip(r); if (isError(r) || r.length() < 6) return;
         int a = byteAt(r, 2); if (a < 0) return;
         data.mapKpa = a;  // kPa absolute
-        // First reading updates baro if engine just started (low RPM / idle MAP ≈ baro)
-        if (data.rpm < 900 && a > 90 && a < 105) data.baroKpa = a;
+    }
+
+    private void parseBaro(String r) {
+        // PID 0133 — dedicated barometric pressure sensor (no engine state dependency)
+        r = strip(r); if (isError(r) || r.length() < 6) return;
+        int a = byteAt(r, 2); if (a < 0) return;
+        if (a > 85 && a < 108) data.baroKpa = a; // sanity check: 85-108 kPa is realistic
     }
 
     private void parseSTFT(String r) {
@@ -434,6 +474,16 @@ public class OBDManager {
         r = strip(r); if (isError(r) || r.length() < 6) return;
         int a = byteAt(r, 2); if (a < 0) return;
         data.ltftPct = (a - 128f) / 1.28f;
+    }
+
+    private void parseCatTemp(String r) {
+        // Mode 01 PID 013C — Catalyst Temperature Bank 1 Sensor 1
+        // Two bytes: temp(°C) = (A*256 + B) / 10 - 40
+        r = strip(r); if (isError(r) || r.length() < 8) return;
+        int a = byteAt(r, 2), b = byteAt(r, 3);
+        if (a < 0 || b < 0) return;
+        float v = (a * 256f + b) / 10f - 40f;
+        if (v > -41f && v < 2000f) data.catTempC = v;
     }
 
     /** ATRV returns "12.6V" style string */
@@ -462,29 +512,40 @@ public class OBDManager {
     }
 
     private void parseOilTemp(String r) {
-        // Formula: (A * 0.5) - 40 °C  (Subaru standard)
+        // Subaru FA20 oil temp: raw byte, formula A - 40 gives °C
+        // (ScanGauge TXD 07E02210AF, MTH 00090005FFD8 = converts to °F for display)
+        // Raw 0x28=40 → 0°C, 0x8C=140 → 100°C, 0xA0=160 → 120°C
         if (isError(r)) return;
         int a = m22byte(r, 0); if (a < 0) return;
-        data.oilTempC = a * 0.5f - 40f;
+        float v = a - 40f; // °C
+        if (v > -41f && v < 200f) data.oilTempC = v; // sanity gate
     }
 
     private void parseKnockCorr(String r) {
-        // Signed byte: (A - 128) * 0.5 degrees
+        // ScanGauge MTH 00010004FFE0: result = raw / 4 - 32 (degrees)
+        // Range: 0→-32°, 128→0°, 255→31.75° (retard is negative)
         if (isError(r)) return;
         int a = m22byte(r, 0); if (a < 0) return;
-        data.knockCorr = (a - 128) * 0.5f;
+        data.knockCorr = a / 4f - 32f;
+    }
+
+    private void parseWastegate(String r) {
+        // 2210C9 — wastegate duty, MTH 000100010000 = raw directly (0-255)
+        // Treat as 0-100% by dividing by 2.55
+        if (isError(r)) return;
+        int a = m22byte(r, 0); if (a < 0) return;
+        data.wastegatePct = a / 2.55f;
     }
 
     private void parseRoughness(String r, int cyl) {
-        // Raw byte, 0 = smooth, higher = rougher
+        // ScanGauge MTH 000100010000 = raw * 1 / 1 + 0 — raw value directly
         if (isError(r)) return;
         int a = m22byte(r, 0); if (a < 0) return;
-        float v = a * 0.5f;  // scale to 0-127 range
         switch (cyl) {
-            case 1: data.rough1 = v; break;
-            case 2: data.rough2 = v; break;
-            case 3: data.rough3 = v; break;
-            case 4: data.rough4 = v; break;
+            case 1: data.rough1 = a; break;
+            case 2: data.rough2 = a; break;
+            case 3: data.rough3 = a; break;
+            case 4: data.rough4 = a; break;
         }
     }
 
@@ -523,9 +584,10 @@ public class OBDManager {
     }
 
     private void parseAltDuty(String r) {
+        // MTH 000100010000 = raw directly (0-255, treat as 0-100%)
         if (isError(r)) return;
         int a = m22byte(r, 0); if (a < 0) return;
-        data.altDutyPct = a / 255f * 100f;
+        data.altDutyPct = a / 2.55f;
     }
 
     private void parseFuelPump(String r) {
@@ -543,9 +605,12 @@ public class OBDManager {
     }
 
     private void parseLockup(String r) {
+        // Lock-up is 3-state: 0%/50%/100% — map raw byte to nearest state
         if (isError(r)) return;
         int a = m22byte(r, 0); if (a < 0) return;
-        data.lockupPct = a / 255f * 100f;
+        if (a < 64)       data.lockupPct = 0f;
+        else if (a < 192) data.lockupPct = 50f;
+        else              data.lockupPct = 100f;
     }
 
     private void parseTransfer(String r) {
