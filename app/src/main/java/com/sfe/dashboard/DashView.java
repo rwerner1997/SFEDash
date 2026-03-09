@@ -312,54 +312,18 @@ public class DashView extends SurfaceView implements SurfaceHolder.Callback {
         if (obdManager != null)   { obdManager.stop(); }
     }
 
-    // ── Render thread — Choreographer-driven 60fps ───────────────
-    // Choreographer syncs to display vsync so frames land cleanly.
-    // Rendering itself runs on a dedicated thread; Choreographer just
-    // signals when to draw.
+    // ── Render thread — 60fps sleep loop ────────────────────────
 
-    private class RenderThread extends Thread
-            implements android.view.Choreographer.FrameCallback {
-
+    private class RenderThread extends Thread {
         private final SurfaceHolder holder;
         private volatile boolean running = false;
-        private android.view.Choreographer choreographer;
-        private final Object frameLock = new Object();
-        private volatile boolean frameRequested = false;
-
-        RenderThread(SurfaceHolder h) {
-            holder = h; setDaemon(true); setName("Dash-Render");
-        }
-        void setRunning(boolean r) {
-            running = r;
-            if (!r && choreographer != null) {
-                choreographer.removeFrameCallback(this);
-            }
-        }
-
-        @Override public void doFrame(long frameTimeNanos) {
-            if (!running) return;
-            synchronized (frameLock) { frameRequested = true; frameLock.notifyAll(); }
-        }
+        RenderThread(SurfaceHolder h) { holder = h; setDaemon(true); setName("Dash-Render"); }
+        void setRunning(boolean r) { running = r; }
 
         @Override public void run() {
-            android.os.Looper.prepare();
-            choreographer = android.view.Choreographer.getInstance();
-            choreographer.postFrameCallback(this);
-
+            final long TARGET_MS = 16; // 60fps
             while (running) {
-                // Wait for vsync signal
-                synchronized (frameLock) {
-                    while (!frameRequested && running) {
-                        try { frameLock.wait(32); } catch (InterruptedException e) { break; }
-                    }
-                    frameRequested = false;
-                }
-                if (!running) break;
-
-                // Schedule next frame immediately
-                choreographer.postFrameCallback(this);
-
-                // Draw
+                long frameStart = System.currentTimeMillis();
                 Canvas c = null;
                 try {
                     try {
@@ -381,6 +345,8 @@ public class DashView extends SurfaceView implements SurfaceHolder.Callback {
                     try { if (c != null) holder.unlockCanvasAndPost(c); }
                     catch (Exception ignored) {}
                 }
+                long sleep = TARGET_MS - (System.currentTimeMillis() - frameStart);
+                if (sleep > 0) try { Thread.sleep(sleep); } catch (Exception ignored) {}
             }
         }
     }
