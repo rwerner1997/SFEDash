@@ -323,12 +323,13 @@ public class DashView extends SurfaceView implements SurfaceHolder.Callback {
             while (running) {
                 Canvas c = null;
                 try {
-                    // Hardware canvas (API 26+) — GPU accelerated, much smoother
-                    if (android.os.Build.VERSION.SDK_INT >= 26) {
-                        c = holder.lockHardwareCanvas();
-                    } else {
-                        c = holder.lockCanvas();
-                    }
+                    // Try hardware canvas first (GPU), fall back to software
+                    try {
+                        if (android.os.Build.VERSION.SDK_INT >= 26) {
+                            c = holder.lockHardwareCanvas();
+                        }
+                    } catch (Exception ignored) { c = null; }
+                    if (c == null) c = holder.lockCanvas();
                     if (c != null) {
                         c.save();
                         c.translate(offsetX, offsetY);
@@ -336,8 +337,11 @@ public class DashView extends SurfaceView implements SurfaceHolder.Callback {
                         renderFrame(c);
                         c.restore();
                     }
+                } catch (Exception e) {
+                    android.util.Log.e("DashView", "Render error: " + e.getMessage());
                 } finally {
-                    if (c != null) holder.unlockCanvasAndPost(c);
+                    try { if (c != null) holder.unlockCanvasAndPost(c); }
+                    catch (Exception ignored) {}
                 }
                 try { Thread.sleep(33); } catch (Exception ignored) {}
             }
@@ -566,7 +570,9 @@ public class DashView extends SurfaceView implements SurfaceHolder.Callback {
     }
 
     private void scanlines(Canvas c) {
-        if (scanlineBitmap != null) c.drawBitmap(scanlineBitmap, 0, 0, bitmapPaint);
+        try {
+            if (scanlineBitmap != null) c.drawBitmap(scanlineBitmap, 0, 0, bitmapPaint);
+        } catch (Exception ignored) {} // hardware canvas may reject software bitmap
     }
 
     // ── ARC GAUGE ─────────────────────────────────────────────────
