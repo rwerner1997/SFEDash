@@ -1,0 +1,2 @@
+1. Boot screen shows TR580 and Crosstrek instead of TR690 and Forester
+2. Hex numbers in background on boot screen need to go. 
