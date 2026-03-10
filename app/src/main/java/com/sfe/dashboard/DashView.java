@@ -388,6 +388,7 @@ public class DashView extends SurfaceView implements SurfaceHolder.Callback {
         } else {
             drawStatusBar(c, t);
             drawHero(c, t, pg);
+            if (!"gforce".equals(pg.type)) drawSideStrips(c, t);
             drawSparkline(c, t, pg);
             hline(c, t, 215);
             drawPageHeader(c, t, pg);
@@ -922,6 +923,69 @@ public class DashView extends SurfaceView implements SurfaceHolder.Callback {
         c.drawText(pid.lbl, LW/2f, 196, textP);
     }
 
+    // ── SIDE DATA STRIPS (flanking arc gauge) ─────────────────────
+
+    /** Two narrow vertical strips on either side of the arc gauge showing always-on vitals.
+     *  Left:  RPM (top) + Boost (bottom)
+     *  Right: Coolant °F (top) + Oil °F (bottom)
+     *  Each strip is 68 px wide — leaves a ~4 px gap before the arc track outer edge (~72 px). */
+    private void drawSideStrips(Canvas c, Theme t) {
+        DashData d = DashData.get();
+        final float stripW = 68f;
+        final float topY   = 27f;   // just below status bar
+        final float botY   = 215f;  // just above hline
+        final float midY   = topY + (botY - topY) / 2f;  // ~121 px
+
+        // Hairline separators between strip and arc area
+        fillRect(c, (int)stripW,       (int)topY, 1, (int)(botY - topY), t.border, 0.22f);
+        fillRect(c, (int)(LW - stripW),(int)topY, 1, (int)(botY - topY), t.border, 0.22f);
+        // Horizontal divider between the two items in each strip
+        fillRect(c, 0,               (int)midY, (int)stripW,       1, t.border, 0.18f);
+        fillRect(c, (int)(LW - stripW),(int)midY, (int)stripW,       1, t.border, 0.18f);
+
+        // Left strip: RPM (top slot) + Boost (bottom slot)
+        drawStripItem(c, t, 0,           topY, stripW, midY - topY, PAGES[0].pids[0], d.rpm,       "RPM",  "RPM");
+        drawStripItem(c, t, 0,           midY, stripW, botY - midY, PAGES[2].pids[0], d.boostPsi(),"BOOST","PSI");
+        // Right strip: Coolant (top slot) + Oil (bottom slot)
+        drawStripItem(c, t, LW - stripW, topY, stripW, midY - topY, PAGES[1].pids[0], d.coolantF(),"COOL", "°F");
+        drawStripItem(c, t, LW - stripW, midY, stripW, botY - midY, PAGES[1].pids[1], d.oilTempF(),"OIL",  "°F");
+    }
+
+    private void drawStripItem(Canvas c, Theme t, float x, float y, float w, float h,
+                                PidDef pid, float v, String shortLbl, String unit) {
+        float nv  = nrm(pid, v);
+        int   col = bandColor(pid, v, t);
+        float cx  = x + w / 2f;
+
+        // Subtle tinted fill
+        fillRect(c, (int)x, (int)y, (int)w, (int)h, col, 0.05f);
+        // 2 px accent bar at top of slot
+        fillRect(c, (int)x, (int)y, (int)w, 2, col, 0.55f);
+
+        // Short label (6 pt mono)
+        sf(6, true, false);
+        textP.setColor(ac(t.label, 170)); textP.setAlpha(170); textP.setTextAlign(Paint.Align.CENTER);
+        c.drawText(shortLbl, cx, y + 12, textP);
+
+        // Large value
+        String vs = fmtV(v, pid.dec);
+        float fs = vs.length() <= 3 ? 18f : vs.length() <= 5 ? 15f : 12f;
+        sf(fs, true, true);
+        textP.setTextAlign(Paint.Align.CENTER);
+        float valY = y + h * 0.58f;
+        textShadow(c, vs, cx, valY, t.bg, col);
+
+        // Unit (6 pt mono)
+        sf(6, false, false);
+        textP.setColor(ac(col, 200)); textP.setAlpha(200); textP.setTextAlign(Paint.Align.CENTER);
+        c.drawText(unit, cx, valY + 11, textP);
+
+        // Mini bar (3 px) at bottom of slot
+        float bx = x + 5, bw = w - 10, by = y + h - 10;
+        fillRect(c, (int)bx, (int)by, (int)bw, 3, t.bg, 1f);
+        fillRect(c, (int)bx, (int)by, Math.max(2, (int)(nv * bw)), 3, col, 1f);
+    }
+
     // ── TURBO COMPRESSOR WHEEL ────────────────────────────────────
 
     private void drawTurboWheel(Canvas c, Theme t) {
@@ -1135,16 +1199,15 @@ public class DashView extends SurfaceView implements SurfaceHolder.Callback {
         c.drawLine(LW-14, CY-46, LW-8, CY-46, strokeP);
         c.drawLine(LW-14, CY+46, LW-8, CY+46, strokeP);
 
-        sf(7,false,false); textP.setColor(ac(t.white,0.65f)); textP.setTextAlign(Paint.Align.CENTER);
-        c.drawText("FIRING ORDER  1-3-2-4", LW/2f, CY+72, textP);
-        textP.setColor(t.accent); c.drawText("FA20DIT · BOXER-4 · 2.0L DI", LW/2f, CY+87, textP);
-        // Live RPM + boost mini strip
-        sf(7,true,true); textP.setColor(t.white); textP.setTextAlign(Paint.Align.LEFT);
-        c.drawText(String.valueOf(Math.round(dd.rpm))+" RPM", LW/2f-50, CY+72, textP);
-        sf(7,true,true); textP.setTextAlign(Paint.Align.RIGHT);
+        // Live RPM + boost — pinned to screen edges to avoid overlap
+        sf(7,true,true); textP.setColor(t.white); textP.setAlpha(255); textP.setTextAlign(Paint.Align.LEFT);
+        c.drawText(String.valueOf(Math.round(dd.rpm))+" RPM", 14, CY+70, textP);
         int bCol=dd.boostPsi()<0?t.cyan:dd.boostPsi()<10?t.green:t.yellow;
-        textP.setColor(bCol);
-        c.drawText((dd.boostPsi()>=0?"+":"")+String.format("%.1f",dd.boostPsi())+" PSI", LW/2f+50, CY+72, textP);
+        sf(7,true,true); textP.setColor(bCol); textP.setTextAlign(Paint.Align.RIGHT);
+        c.drawText((dd.boostPsi()>=0?"+":"")+String.format("%.1f",dd.boostPsi())+" PSI", LW-14, CY+70, textP);
+        // Firing order on its own centred line
+        sf(7,false,false); textP.setColor(ac(t.white,0.55f)); textP.setTextAlign(Paint.Align.CENTER);
+        c.drawText("FIRING ORDER  1-3-2-4", LW/2f, CY+86, textP);
 
         hline(c,t,310);
         float cW=78,cH=82,cY2=312;
