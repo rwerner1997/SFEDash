@@ -47,6 +47,11 @@ public class OBDManager {
     private OutputStream     outStream;
     private Thread           pollThread;
 
+    // CAN header/filter state — reset to "" at start of each pollLoop so AT commands
+    // are always re-sent after a reconnect (ATZ wipes ELM327 state).
+    private String currentHeader = "";
+    private String currentCRA    = "";
+
     // Poll-rate tracking
     private int  pollCount  = 0;
     private long pollWindow = System.currentTimeMillis();
@@ -222,6 +227,7 @@ public class OBDManager {
         sendCmd("ATST0A");          // timeout 10 * 4ms = 40ms per try (ELM side); ATAT adjusts down further
         sendCmd("ATAT2");           // adaptive timing mode 2 — most aggressive, minimises dead-wait
         sendCmd("ATAL");            // allow long messages (multi-frame Mode 22 responses)
+        sendCmd("ATCRA7E8");        // default receive-address filter: ECU (7E8)
         // Verify comms with a simple Mode 01 ping
         String resp = sendCmd("0100");
         if (resp.contains("UNABLE") || resp.contains("ERROR") || resp.isEmpty()) {
@@ -237,7 +243,8 @@ public class OBDManager {
         long lastHz = System.currentTimeMillis();
         int hzCount = 0;
         int loopCount = 0;
-        String currentHeader = "";
+        currentHeader = "";   // force re-send after reconnect (ATZ wipes ELM state)
+        currentCRA    = "";
 
         while (running.get() && data.connected) {
             long t0 = System.currentTimeMillis();
@@ -247,10 +254,7 @@ public class OBDManager {
             // RPM, Speed, MAP(boost), Pedal — must be responsive
             // ════════════════════════════════════════════════════
             // Always explicitly set 7DF before Mode 01 — never assume header state
-            if (!"7DF".equals(currentHeader)) {
-                sendCmd("ATSH7DF");
-                currentHeader = "7DF";
-            }
+            setHeader("7DF", "7E8");
             parseRPM(sendCmd("010C"));
             parseSpeed(sendCmd("010D"));
             parseMAP(sendCmd("010B"));
@@ -262,7 +266,7 @@ public class OBDManager {
             // Engine vitals, fuel trim, knock
             // ════════════════════════════════════════════════════
             if (loopCount % 3 == 0) {
-                if (!"7DF".equals(currentHeader)) { sendCmd("ATSH7DF"); currentHeader = "7DF"; }
+                setHeader("7DF", "7E8");
                 parseLoad(sendCmd("0104"));
                 parseCoolant(sendCmd("0105"));
                 parseOilTemp(sendCmd("015C"));  // Mode 01 PID 0x5C: oil temp, reliable & fast
@@ -272,8 +276,7 @@ public class OBDManager {
                 parseLTFT(sendCmd("0107"));
 
                 // Knock and wastegate — ECU header needed
-                sendCmd("ATSH7E0");
-                currentHeader = "7E0";
+                setHeader("7E0", "7E8");
                 parseKnockCorr(sendCmdTimeout("223018", CMD_TIMEOUT_SLOW));
                 parseWastegate(sendCmdTimeout("2210C9", CMD_TIMEOUT_SLOW));
             }
@@ -287,12 +290,12 @@ public class OBDManager {
             // ════════════════════════════════════════════════════
             if (loopCount % 10 == 0) {
                 // Switch back to 7DF for Mode 01 PIDs
-                if (!"7DF".equals(currentHeader)) { sendCmd("ATSH7DF"); currentHeader = "7DF"; }
+                setHeader("7DF", "7E8");
                 parseBaro(sendCmd("0133"));
                 parseFuelLevel(sendCmd("012F"));   // fuel tank level (Mode 01)
                 parseBattery(sendCmd("ATRV"));
 
-                sendCmd("ATSH7E0"); currentHeader = "7E0";
+                setHeader("7E0", "7E8");
                 parseRoughness(sendCmdTimeout("223062", CMD_TIMEOUT_SLOW), 1);
                 parseRoughness(sendCmdTimeout("223048", CMD_TIMEOUT_SLOW), 2);
                 parseRoughness(sendCmdTimeout("223068", CMD_TIMEOUT_SLOW), 3);
@@ -312,7 +315,7 @@ public class OBDManager {
             // Staggered so TCU never waits behind the full ECU block
             // ════════════════════════════════════════════════════
             if (loopCount % 10 == 5) {
-                sendCmd("ATSH7E1"); currentHeader = "7E1";
+                setHeader("7E1", "7E9");
                 parseCVTTemp(sendCmdTimeout("221017", CMD_TIMEOUT_SLOW));
                 parseLockup(sendCmdTimeout("221045", CMD_TIMEOUT_SLOW));
                 parseTransfer(sendCmdTimeout("221065", CMD_TIMEOUT_SLOW));
@@ -324,7 +327,7 @@ public class OBDManager {
                 // PIDs confirmed in CarScanner log (2210D2 = TCU, 221299 = ECM)
                 parsePriPulley(sendCmdTimeout("2210D2", CMD_TIMEOUT_SLOW));
 
-                sendCmd("ATSH7E0"); currentHeader = "7E0";
+                setHeader("7E0", "7E8");
                 parseCvtMode(sendCmdTimeout("221299", CMD_TIMEOUT_SLOW));
             }
 
@@ -333,7 +336,7 @@ public class OBDManager {
             // ScanGauge PIDs: VVT advance angles, throttle motor, fan
             // ════════════════════════════════════════════════════
             if (loopCount % 10 == 2) {
-                if (!"7E0".equals(currentHeader)) { sendCmd("ATSH7E0"); currentHeader = "7E0"; }
+                setHeader("7E0", "7E8");
                 parseVvtAngleR(sendCmdTimeout("221099", CMD_TIMEOUT_SLOW));
                 parseVvtAngleL(sendCmdTimeout("2210B9", CMD_TIMEOUT_SLOW));
                 parseRadFan(sendCmdTimeout("2210E3", CMD_TIMEOUT_SLOW));
@@ -346,7 +349,7 @@ public class OBDManager {
             // fuel tank pressure, EGR steps
             // ════════════════════════════════════════════════════
             if (loopCount % 10 == 7) {
-                if (!"7E0".equals(currentHeader)) { sendCmd("ATSH7E0"); currentHeader = "7E0"; }
+                setHeader("7E0", "7E8");
                 parseInjPulse(sendCmdTimeout("2210A3", CMD_TIMEOUT_SLOW));
                 parseCpcValve(sendCmdTimeout("2210CB", CMD_TIMEOUT_SLOW));
                 parseOsvL(sendCmdTimeout("2210E5", CMD_TIMEOUT_SLOW));
@@ -386,6 +389,20 @@ public class OBDManager {
         outStream.write((cmd + "\r").getBytes());
         outStream.flush();
         return readUntilPrompt(timeoutMs);
+    }
+
+    /** Set CAN transmit header (ATSH) and receive-address filter (ATCRA) together.
+     *  Only sends each AT command when the value has actually changed, so the fast
+     *  7DF↔7E0 transitions (both use CRA 7E8) cost only one ATSH round-trip, not two. */
+    private void setHeader(String hdr, String cra) throws IOException {
+        if (!hdr.equals(currentHeader)) {
+            sendCmd("ATSH" + hdr);
+            currentHeader = hdr;
+        }
+        if (!cra.equals(currentCRA)) {
+            sendCmd("ATCRA" + cra);
+            currentCRA = cra;
+        }
     }
 
     /** Write raw bytes without reading response */
