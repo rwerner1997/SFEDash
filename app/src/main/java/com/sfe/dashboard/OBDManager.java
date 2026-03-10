@@ -250,35 +250,42 @@ public class OBDManager {
             long t0 = System.currentTimeMillis();
 
             // ════════════════════════════════════════════════════
-            // TIER 1 — FAST: every loop (~10-15Hz)
-            // RPM, Speed, MAP(boost), Pedal — must be responsive
+            // TIER 1 — FAST: every loop (~10-20Hz) — MODE 22 BURST
+            // All on header 7E0/CRA 7E8; no header switching in hot path.
+            // Spec §4 burst cycle: RPM, MAP, Boost, MAF, Timing, Coolant.
             // ════════════════════════════════════════════════════
-            // Always explicitly set 7DF before Mode 01 — never assume header state
-            setHeader("7DF", "7E8");
-            parseRPM(sendCmd("010C"));
-            parseSpeed(sendCmd("010D"));
-            parseMAP(sendCmd("010B"));
-            parsePedal(sendCmd("0145"));  // PID 0x45 = Relative Accelerator Pedal Position
-            parseCatTemp(sendCmd("013C"));
+            setHeader("7E0", "7E8");
+            parseRPM(sendCmd("221027"));          // TODO: verify formula on car
+            parseSpeed(sendCmd("221028"));         // TODO: verify formula on car
+            parseMAP22(sendCmd("221024"));         // TODO: verify formula on car
+            parseThrottleAngle(sendCmd("221022")); // throttle body angle %
+            parsePedal22(sendCmd("221023"));       // accelerator pedal %
+            parseMAF22(sendCmd("221026"));         // TODO: verify formula on car
+            parseTiming22(sendCmd("22102A"));      // TODO: verify formula on car
+            parseCoolant22(sendCmd("221020"));     // TODO: verify formula on car
+            parseBoostDirect(sendCmdTimeout("2210A6", CMD_TIMEOUT_SLOW)); // direct boost psi
 
             // ════════════════════════════════════════════════════
             // TIER 2 — MEDIUM: every 3rd loop (~3-5Hz)
-            // Engine vitals, fuel trim, knock
+            // Load, fuel trim, oil/cat temps (Mode 01, no Mode 22 equivalent).
+            // Knock, wastegate, IAT, target boost, fine knock (Mode 22).
             // ════════════════════════════════════════════════════
             if (loopCount % 3 == 0) {
+                // Mode 01 PIDs with no spec Mode 22 equivalent
                 setHeader("7DF", "7E8");
                 parseLoad(sendCmd("0104"));
-                parseCoolant(sendCmd("0105"));
-                parseOilTemp(sendCmd("015C"));  // Mode 01 PID 0x5C: oil temp, reliable & fast
-                parseTiming(sendCmd("010E"));
-                parseMAF(sendCmd("0110"));
+                parseOilTemp(sendCmd("015C"));
+                parseCatTemp(sendCmd("013C"));
                 parseSTFT(sendCmd("0106"));
                 parseLTFT(sendCmd("0107"));
 
-                // Knock and wastegate — ECU header needed
+                // Mode 22 ECU — spec §7 knock health + §6 turbo
                 setHeader("7E0", "7E8");
-                parseKnockCorr(sendCmdTimeout("223018", CMD_TIMEOUT_SLOW));
-                parseWastegate(sendCmdTimeout("2210C9", CMD_TIMEOUT_SLOW));
+                parseKnockCorr(sendCmdTimeout("2210AF", CMD_TIMEOUT_SLOW));      // was 223018
+                parseWastegate(sendCmdTimeout("2210A8", CMD_TIMEOUT_SLOW));      // was 2210C9
+                parseIAT(sendCmdTimeout("22101F", CMD_TIMEOUT_SLOW));
+                parseTargetBoost(sendCmdTimeout("2210A7", CMD_TIMEOUT_SLOW));
+                parseFineKnock(sendCmdTimeout("2210B0", CMD_TIMEOUT_SLOW));
             }
 
             // ════════════════════════════════════════════════════
@@ -308,6 +315,8 @@ public class OBDManager {
                 parseBattTemp(sendCmdTimeout("22309A", CMD_TIMEOUT_SLOW));
                 parseAltDuty(sendCmdTimeout("221093", CMD_TIMEOUT_SLOW));
                 parseFuelPump(sendCmdTimeout("2210B3", CMD_TIMEOUT_SLOW));
+                parseTurboSpeed(sendCmdTimeout("2210A9", CMD_TIMEOUT_SLOW));     // spec §6
+                parseChargeAirTemp(sendCmdTimeout("2210AA", CMD_TIMEOUT_SLOW));  // spec §6
             }
 
             // ════════════════════════════════════════════════════
@@ -316,14 +325,15 @@ public class OBDManager {
             // ════════════════════════════════════════════════════
             if (loopCount % 10 == 5) {
                 setHeader("7E1", "7E9");
-                parseCVTTemp(sendCmdTimeout("221017", CMD_TIMEOUT_SLOW));
+                parseCVTTemp(sendCmdTimeout("221021", CMD_TIMEOUT_SLOW));        // was 221017
                 parseLockup(sendCmdTimeout("221045", CMD_TIMEOUT_SLOW));
                 parseTransfer(sendCmdTimeout("221065", CMD_TIMEOUT_SLOW));
                 parseTurbineRpm(sendCmdTimeout("221067", CMD_TIMEOUT_SLOW));
-                parsePrimaryRpm(sendCmdTimeout("22300E", CMD_TIMEOUT_SLOW));
-                parseSecondaryRpm(sendCmdTimeout("2230D0", CMD_TIMEOUT_SLOW));
-                parseGearRatioAct(sendCmdTimeout("2230DA", CMD_TIMEOUT_SLOW));
-                parseGearRatioTgt(sendCmdTimeout("2230F8", CMD_TIMEOUT_SLOW));
+                parsePrimaryRpm(sendCmdTimeout("221151", CMD_TIMEOUT_SLOW));     // was 22300E — input shaft
+                parseSecondaryRpm(sendCmdTimeout("221152", CMD_TIMEOUT_SLOW));   // was 2230D0 — output shaft
+                parseGearRatioAct(sendCmdTimeout("221150", CMD_TIMEOUT_SLOW));   // was 2230DA
+                parseGearRatioTgt(sendCmdTimeout("2230F8", CMD_TIMEOUT_SLOW));   // no spec equivalent, keep
+                parseTorqueConvSlip(sendCmdTimeout("221153", CMD_TIMEOUT_SLOW)); // spec §9 — direct slip rpm
                 // PIDs confirmed in CarScanner log (2210D2 = TCU, 221299 = ECM)
                 parsePriPulley(sendCmdTimeout("2210D2", CMD_TIMEOUT_SLOW));
 
@@ -350,12 +360,16 @@ public class OBDManager {
             // ════════════════════════════════════════════════════
             if (loopCount % 10 == 7) {
                 setHeader("7E0", "7E8");
-                parseInjPulse(sendCmdTimeout("2210A3", CMD_TIMEOUT_SLOW));
+                parseInjPulse(sendCmdTimeout("2210C0", CMD_TIMEOUT_SLOW));       // was 2210A3
+                parseInjDutyCycle(sendCmdTimeout("2210C1", CMD_TIMEOUT_SLOW));   // spec §8 — new
+                parseAFR(sendCmdTimeout("2210C3", CMD_TIMEOUT_SLOW));            // spec §8 — new
+                parseTargetAFR(sendCmdTimeout("2210C4", CMD_TIMEOUT_SLOW));      // spec §8 — new
+                parseHPFP(sendCmdTimeout("2210C7", CMD_TIMEOUT_SLOW));           // spec §8 — new
                 parseCpcValve(sendCmdTimeout("2210CB", CMD_TIMEOUT_SLOW));
                 parseOsvL(sendCmdTimeout("2210E5", CMD_TIMEOUT_SLOW));
                 parseOsvR(sendCmdTimeout("2210C5", CMD_TIMEOUT_SLOW));
                 parseFuelTankPress(sendCmdTimeout("22108F", CMD_TIMEOUT_SLOW));
-                parseEgrSteps(sendCmdTimeout("2210B1", CMD_TIMEOUT_SLOW));
+                parseDAM(sendCmdTimeout("2210B1", CMD_TIMEOUT_SLOW));            // was egrSteps
             }
 
             data.updatePeaks();
@@ -462,28 +476,72 @@ public class OBDManager {
                || u.contains("7F22") || u.contains("7F21"); // UDS negative response to mode 22/21
     }
 
-    // ── Mode 01 parsers ───────────────────────────────────────────
+    // ── Mode 22 Tier 1 burst parsers (all on 7E0/7E8) ────────────
+    // Formulas are best-guess for FA20DIT — verify on first car run.
 
     private void parseRPM(String r) {
-        r = strip(r); if (isError(r) || r.length() < 8) return;
-        // "410CXXXXYYYY" — service 41, pid 0C, bytes A B
-        int a = byteAt(r, 2), b = byteAt(r, 3);
-        if (a < 0 || b < 0) return;
-        data.rpm = (a * 256f + b) / 4f;
+        // 221027 — Engine RPM (Mode 22 burst). TODO: verify formula on car.
+        if (isError(r)) return;
+        int v = m22word(r); if (v < 0) return;
+        data.rpm = v / 4f;  // likely same encoding as Mode 01 (0.25 RPM/count)
     }
 
     private void parseSpeed(String r) {
-        r = strip(r); if (isError(r) || r.length() < 6) return;
-        int a = byteAt(r, 2); if (a < 0) return;
-        data.speedKph = a;
+        // 221028 — Vehicle Speed km/h. TODO: verify formula on car.
+        if (isError(r)) return;
+        int a = m22byte(r, 0); if (a < 0) return;
+        data.speedKph = a;  // 1 km/h per count (same as Mode 01)
     }
 
-    private void parsePedal(String r) {
-        // PID 0149 = Commanded throttle actuator (tracks pedal intent in drive-by-wire)
-        // Falls back gracefully — if not supported, value stays at last known
-        r = strip(r); if (isError(r) || r.length() < 6) return;
-        int a = byteAt(r, 2); if (a < 0) return;
+    private void parseThrottleAngle(String r) {
+        // 221022 — Throttle body angle %. TODO: verify formula on car.
+        if (isError(r)) return;
+        int a = m22byte(r, 0); if (a < 0) return;
         data.throttlePct = a / 255f * 100f;
+    }
+
+    private void parsePedal22(String r) {
+        // 221023 — Accelerator pedal position %. TODO: verify formula on car.
+        if (isError(r)) return;
+        int a = m22byte(r, 0); if (a < 0) return;
+        data.pedalPct = a / 255f * 100f;
+    }
+
+    private void parseMAP22(String r) {
+        // 221024 — Manifold absolute pressure kPa. TODO: verify formula on car.
+        if (isError(r)) return;
+        int a = m22byte(r, 0); if (a < 0) return;
+        data.mapKpa = a;
+    }
+
+    private void parseMAF22(String r) {
+        // 221026 — MAF g/s. TODO: verify formula on car.
+        if (isError(r)) return;
+        int v = m22word(r); if (v < 0) return;
+        data.mafGs = v / 100f;  // same encoding as Mode 01 (0.01 g/s per count)
+    }
+
+    private void parseTiming22(String r) {
+        // 22102A — Ignition timing degrees. TODO: verify formula on car.
+        if (isError(r)) return;
+        int a = m22byte(r, 0); if (a < 0) return;
+        data.timingDeg = a / 2f - 64f;  // same encoding as Mode 01
+    }
+
+    private void parseCoolant22(String r) {
+        // 221020 — Coolant temperature °C. TODO: verify formula on car.
+        if (isError(r)) return;
+        int a = m22byte(r, 0); if (a < 0) return;
+        float v = a - 40f;
+        if (v > -41f && v < 200f) data.coolantC = v;
+    }
+
+    private void parseBoostDirect(String r) {
+        // 2210A6 — Boost pressure psi (spec §6). TODO: verify formula on car.
+        // Assumes 0.1 psi/count absolute; subtract atmospheric for gauge psi.
+        if (isError(r)) return;
+        int a = m22byte(r, 0); if (a < 0) return;
+        data.boostPsiDirect = a / 10f - 14.7f;
     }
 
     private void parseLoad(String r) {
@@ -585,7 +643,7 @@ public class OBDManager {
     }
 
     private void parseKnockCorr(String r) {
-        // ScanGauge MTH 00010004FFE0: result = raw / 4 - 32 (degrees)
+        // 2210AF — feedback knock correction degrees (spec §7; was 223018)
         // Range: 0→-32°, 128→0°, 255→31.75° (retard is negative)
         if (isError(r)) return;
         int a = m22byte(r, 0); if (a < 0) return;
@@ -593,11 +651,32 @@ public class OBDManager {
     }
 
     private void parseWastegate(String r) {
-        // 2210C9 — wastegate duty, MTH 000100010000 = raw directly (0-255)
-        // Treat as 0-100% by dividing by 2.55
+        // 2210A8 — wastegate duty cycle % (spec §6; was 2210C9)
         if (isError(r)) return;
         int a = m22byte(r, 0); if (a < 0) return;
         data.wastegatePct = a / 2.55f;
+    }
+
+    private void parseIAT(String r) {
+        // 22101F — intake air temperature °C (spec §5 Medium)
+        if (isError(r)) return;
+        int a = m22byte(r, 0); if (a < 0) return;
+        float v = a - 40f;
+        if (v > -41f && v < 200f) data.iatC = v;
+    }
+
+    private void parseTargetBoost(String r) {
+        // 2210A7 — target boost pressure psi (spec §6). TODO: verify formula on car.
+        if (isError(r)) return;
+        int a = m22byte(r, 0); if (a < 0) return;
+        data.targetBoostPsi = a / 10f - 14.7f;
+    }
+
+    private void parseFineKnock(String r) {
+        // 2210B0 — fine knock learning degrees (spec §7)
+        if (isError(r)) return;
+        int a = m22byte(r, 0); if (a < 0) return;
+        data.fineKnockDeg = a / 4f - 32f;
     }
 
     private void parseRoughness(String r, int cyl) {
@@ -659,10 +738,25 @@ public class OBDManager {
         data.fuelPumpPct = a / 255f * 100f;
     }
 
+    private void parseTurboSpeed(String r) {
+        // 2210A9 — turbo speed estimate rpm (spec §6). TODO: verify formula on car.
+        if (isError(r)) return;
+        int v = m22word(r); if (v < 0) return;
+        data.turboSpeedRpm = v * 10f;  // 10 RPM per count (common encoding)
+    }
+
+    private void parseChargeAirTemp(String r) {
+        // 2210AA — charge air / intercooler outlet temperature °C (spec §6)
+        if (isError(r)) return;
+        int a = m22byte(r, 0); if (a < 0) return;
+        float v = a - 40f;
+        if (v > -41f && v < 200f) data.chargeAirTempC = v;
+    }
+
     // ── Mode 22 TCU parsers ────────────────────────────────────────
 
     private void parseCVTTemp(String r) {
-        // MTH 00090005FFC6 = raw*9/5-58 (°F display), so raw-40 = °C
+        // 221021 — CVT fluid temperature °C (spec §9; was 221017)
         if (isError(r)) return;
         int a = m22byte(r, 0); if (a < 0) return;
         float v = a - 40f;
@@ -705,17 +799,25 @@ public class OBDManager {
     }
 
     private void parseGearRatioAct(String r) {
-        // MTH 006400FF0000 = raw * 100 / 255
+        // 221150 — CVT ratio actual (spec §9; was 2230DA). TODO: verify formula on car.
+        // Assumes word / 1000 = ratio (e.g. 2500 = 2.500, 400 = 0.400)
         if (isError(r)) return;
         int v = m22word(r); if (v < 0) return;
-        data.gearRatioAct = v * 100f / 255f;
+        data.gearRatioAct = v / 1000f;
     }
 
     private void parseGearRatioTgt(String r) {
-        // MTH 006400FF0000 = raw * 100 / 255
+        // 2230F8 — CVT ratio target (no spec equivalent; keep for compatibility)
         if (isError(r)) return;
         int v = m22word(r); if (v < 0) return;
         data.gearRatioTgt = v * 100f / 255f;
+    }
+
+    private void parseTorqueConvSlip(String r) {
+        // 221153 — torque converter slip rpm (spec §9). TODO: verify formula on car.
+        if (isError(r)) return;
+        int v = m22word(r); if (v < 0) return;
+        data.torqueConverterSlipRpm = v;
     }
 
     private void parsePriPulley(String r) {
@@ -769,12 +871,40 @@ public class OBDManager {
     }
 
     private void parseInjPulse(String r) {
-        // 2210A3 — Fuel Injection #1 Pulse Width
-        // ScanGauge MTH 004000190000: raw * 64 / 25 (in ECU-native 0.01ms units)
-        // Divide by 100 to get ms. Typical idle: ~2-4ms.
+        // 2210C0 — injector pulse width ms (spec §8; was 2210A3). TODO: verify formula on car.
+        // Assumes 2-byte word in 0.001ms units: word * 0.001 = ms
+        if (isError(r)) return;
+        int v = m22word(r); if (v < 0) return;
+        data.injPulseMs = v * 0.001f;
+    }
+
+    private void parseInjDutyCycle(String r) {
+        // 2210C1 — injector duty cycle % (spec §8). TODO: verify formula on car.
         if (isError(r)) return;
         int a = m22byte(r, 0); if (a < 0) return;
-        data.injPulseMs = (a * 64f / 25f) / 100f;
+        data.injDutyCyclePct = a / 2.55f;
+    }
+
+    private void parseAFR(String r) {
+        // 2210C3 — air/fuel ratio as lambda (spec §8). TODO: verify formula on car.
+        // Assumes word / 1000 = lambda (e.g. 1000 = 1.000 lambda = stoich)
+        if (isError(r)) return;
+        int v = m22word(r); if (v < 0) return;
+        data.afrLambda = v / 1000f;
+    }
+
+    private void parseTargetAFR(String r) {
+        // 2210C4 — target AFR lambda (spec §8). TODO: verify formula on car.
+        if (isError(r)) return;
+        int v = m22word(r); if (v < 0) return;
+        data.targetAfrLambda = v / 1000f;
+    }
+
+    private void parseHPFP(String r) {
+        // 2210C7 — high pressure fuel pump pressure psi (spec §8). TODO: verify formula on car.
+        if (isError(r)) return;
+        int a = m22byte(r, 0); if (a < 0) return;
+        data.hpfpPsi = a;  // raw byte; may need scaling
     }
 
     private void parseCpcValve(String r) {
@@ -809,12 +939,13 @@ public class OBDManager {
         data.fuelTankPressKpa = v;
     }
 
-    private void parseEgrSteps(String r) {
-        // 2210B1 — Number of EGR Steps
-        // ScanGauge MTH 000100010000: raw byte directly
+    private void parseDAM(String r) {
+        // 2210B1 — dynamic advance multiplier ratio (spec §7; was EGR steps)
+        // 1.0 = nominal, <1.0 = ECU has pulled timing due to knock history
+        // TODO: verify formula on car
         if (isError(r)) return;
         int a = m22byte(r, 0); if (a < 0) return;
-        data.egrSteps = a;
+        data.damRatio = a / 255f;
     }
 
     // ── Mode 01 — additional parsers ─────────────────────────────

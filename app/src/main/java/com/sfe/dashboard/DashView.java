@@ -459,7 +459,7 @@ public class DashView extends SurfaceView implements SurfaceHolder.Callback {
         DashData d = DashData.get();
         // Estimate longitudinal G from speed delta (placeholder — real app would use accelerometer)
         // For now just use a simple proxy from throttle/load
-        float targetG = (d.throttlePct / 100f * 0.4f) - 0.05f;
+        float targetG = (d.pedalPct / 100f * 0.4f) - 0.05f;
         gLong += (targetG - gLong) * 0.12f;
         gSmooth += (gLong - gSmooth) * 0.15f;
         // Shift trail
@@ -472,7 +472,7 @@ public class DashView extends SurfaceView implements SurfaceHolder.Callback {
             System.arraycopy(gTrailY, 1, gTrailY, 0, 27);
             gTrailX[27] = gLat; gTrailY[27] = gLong;
         }
-        thrV = d.throttlePct;
+        thrV = d.pedalPct;
     }
 
     // ── History buffer ────────────────────────────────────────────
@@ -492,14 +492,14 @@ public class DashView extends SurfaceView implements SurfaceHolder.Callback {
 
     private float[][] getPageVals(DashData d) {
         return new float[][]{
-            {d.rpm, d.loadPct, d.throttlePct, d.timingDeg},
+            {d.rpm, d.loadPct, d.pedalPct, d.timingDeg},
             {d.coolantF(), d.oilTempF(), d.cvtTempF(), d.catTempF()},
             {d.boostPsi(), d.mapPsi(), d.mafGs, d.targetMapPsi()},
             {d.cvtTempF(), d.lockupPct, d.cvtSlipPct(), d.transferPct},
             {d.rough1, d.rough2, d.rough3, d.rough4},
             {d.stftPct, d.ltftPct, d.fuelPumpPct, d.altDutyPct},
             {gLong, d.speedMph(), d.rpm, d.loadPct},
-            {d.timingDeg, d.loadPct, d.throttlePct, d.knockCorr},
+            {d.timingDeg, d.loadPct, d.pedalPct, d.knockCorr},
             {d.timingDeg, d.battV, d.baroPsi(), d.battTempF()},
             {d.ocvIntakeL, d.ocvIntakeR, d.ocvExhL, d.ocvExhR},
             {d.peakBoostPsi, d.peakRpm, d.peakTimingDeg, d.peakLoadPct,
