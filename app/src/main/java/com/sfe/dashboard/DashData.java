@@ -16,40 +16,51 @@ public class DashData {
     public volatile long    lastPollMs  = 0;
     public volatile int     pollHz      = 0;       // rolling average polls/sec
 
-    // ── MODE 01 — standard PIDs ──────────────────────────────────
-    public volatile float rpm        = 820f;
-    public volatile float speedKph   = 0f;
-    public volatile float throttlePct= 1.2f;
-    public volatile float loadPct    = 12f;
-    public volatile float coolantC   = 57f;
-    public volatile float timingDeg  = 8.4f;
-    public volatile float mafGs      = 1.4f;
-    public volatile float mapKpa     = 97.8f;   // absolute MAP
-    public volatile float stftPct    = 0f;
-    public volatile float ltftPct    = 0f;
-    public volatile float baroKpa    = 97.8f;   // updated once at connect
+    // ── MODE 22 BURST Tier 1 (AT SH 7E0) + MODE 01 slow PIDs ────
+    public volatile float rpm        = 820f;     // 221027
+    public volatile float speedKph   = 0f;       // 221028
+    public volatile float throttlePct= 1.2f;     // 221022 — throttle body angle
+    public volatile float pedalPct   = 1.2f;     // 221023 — accelerator pedal position
+    public volatile float loadPct    = 12f;      // 0104 Mode 01
+    public volatile float coolantC   = 57f;      // 221020
+    public volatile float timingDeg  = 8.4f;     // 22102A
+    public volatile float mafGs      = 1.4f;     // 221026
+    public volatile float mapKpa     = 97.8f;    // 221024 — absolute MAP kPa
+    public volatile float stftPct    = 0f;       // 0106 Mode 01
+    public volatile float ltftPct    = 0f;       // 0107 Mode 01
+    public volatile float baroKpa    = 97.8f;    // 0133 Mode 01 — updated once at connect
     public volatile float battV      = 13.8f;
 
     // ── MODE 22 ECU (AT SH 7E0) ──────────────────────────────────
     public volatile float oilTempC      = 43f;
-    public volatile float catTempC       = 400f;  // °C — catalyst temp bank 1
-    public volatile float knockCorr     = 0f;    // degrees, negative = retard
+    public volatile float catTempC      = 400f;   // °C — catalyst temp bank 1 (013C, Mode 01)
+    public volatile float iatC          = 20f;    // 22101F — intake air temperature (°C)
+    public volatile float knockCorr     = 0f;     // 2210AF — feedback knock correction (deg, neg=retard)
+    public volatile float fineKnockDeg  = 0f;     // 2210B0 — fine knock learning (deg)
     public volatile float rough1        = 0.2f;
     public volatile float rough2        = 0.1f;
     public volatile float rough3        = 0.3f;
     public volatile float rough4        = 0.1f;
-    public volatile float wastegatePct  = 0f;    // %
-    public volatile float ocvIntakeL    = 20f;   // % duty
-    public volatile float ocvIntakeR    = 20f;
-    public volatile float ocvExhL       = 35f;
-    public volatile float ocvExhR       = 35f;
-    public volatile float targetMapKpa  = 97.8f;
-    public volatile float battTempC     = 20f;
-    public volatile float altDutyPct    = 70f;
-    public volatile float fuelPumpPct   = 50f;
+    public volatile float boostPsiDirect = -99f;  // 2210A6 — direct boost pressure (psi); -99 = unavailable
+    public volatile float wastegatePct  = 0f;     // 2210A8 — wastegate duty (%)
+    public volatile float targetBoostPsi = 0f;    // 2210A7 — target boost pressure (psi)
+    public volatile float turboSpeedRpm = 0f;     // 2210A9 — turbo speed estimate (rpm)
+    public volatile float chargeAirTempC = 25f;   // 2210AA — charge air / intercooler temp (°C)
+    public volatile float ocvIntakeL    = 20f;    // 2210BB — OCV intake left (% duty)
+    public volatile float ocvIntakeR    = 20f;    // 22109B
+    public volatile float ocvExhL       = 35f;    // 2210EF
+    public volatile float ocvExhR       = 35f;    // 2210CF
+    public volatile float targetMapKpa  = 97.8f;  // 223050 — target MAP (kPa)
+    public volatile float battTempC     = 20f;    // 22309A
+    public volatile float altDutyPct    = 70f;    // 221093
+    public volatile float fuelPumpPct   = 50f;    // 2210B3
 
-    // ── MODE 22 ECU — additional ScanGauge PIDs ───────────────────
-    public volatile float injPulseMs       = 0f;   // 2210A3 — fuel injection #1 pulse width
+    // ── MODE 22 ECU — additional ScanGauge / spec PIDs ───────────
+    public volatile float injPulseMs       = 0f;   // 2210C0 — injector pulse width (ms)
+    public volatile float injDutyCyclePct  = 0f;   // 2210C1 — injector duty cycle (%)
+    public volatile float afrLambda        = 1.0f; // 2210C3 — air/fuel ratio (lambda)
+    public volatile float targetAfrLambda  = 1.0f; // 2210C4 — target AFR (lambda)
+    public volatile float hpfpPsi          = 0f;   // 2210C7 — high pressure fuel pump (psi)
     public volatile float radFanPct        = 0f;   // 2210E3 — radiator fan control (%)
     public volatile float vvtAngleR        = 0f;   // 221099 — VVT advance angle right (°)
     public volatile float vvtAngleL        = 0f;   // 2210B9 — VVT advance angle left  (°)
@@ -58,18 +69,19 @@ public class DashData {
     public volatile float osvLPct          = 0f;   // 2210E5 — OSV duty left  (%)
     public volatile float osvRPct          = 0f;   // 2210C5 — OSV duty right (%)
     public volatile int   fuelTankPressKpa = 0;    // 22108F — fuel tank air pressure (raw word)
-    public volatile int   egrSteps         = 0;    // 2210B1 — number of EGR steps
+    public volatile float damRatio         = 1.0f; // 2210B1 — dynamic advance multiplier (ratio)
     public volatile float fuelLevelPct     = 50f;  // 012F   — fuel level (%)
 
     // ── MODE 22 TCU (AT SH 7E1) ──────────────────────────────────
-    public volatile float cvtTempC      = 27f;
-    public volatile float lockupPct     = 0f;
-    public volatile float transferPct   = 5f;
-    public volatile float turbineRpm    = 820f;
-    public volatile float primaryRpm    = 820f;
-    public volatile float secondaryRpm  = 820f;
-    public volatile float gearRatioAct  = 2.50f;
-    public volatile float gearRatioTgt  = 2.50f;
+    public volatile float cvtTempC      = 27f;    // 221021 — CVT fluid temperature (°C)
+    public volatile float lockupPct     = 0f;     // 221045
+    public volatile float transferPct   = 5f;     // 221065
+    public volatile float turbineRpm    = 820f;   // 221067
+    public volatile float primaryRpm    = 820f;   // 221151 — input shaft speed (rpm)
+    public volatile float secondaryRpm  = 820f;   // 221152 — output shaft speed (rpm)
+    public volatile float gearRatioAct  = 2.50f;  // 221150 — CVT ratio actual
+    public volatile float gearRatioTgt  = 2.50f;  // 2230F8 — CVT ratio target
+    public volatile float torqueConverterSlipRpm = 0f; // 221153 — torque converter slip (rpm)
     // From CarScanner log PIDs
     public volatile int   priPulleyRaw  = 0;   // 2210D2 from TCU — primary pulley (raw)
     public volatile int   cvtModeRaw    = 0;   // 221299 from ECM — CVT mode/range (raw)
@@ -85,17 +97,23 @@ public class DashData {
     public float targetMapPsi() { return targetMapKpa / 6.89476f; }
     public float baroPsi()      { return baroKpa   / 6.89476f; }
 
-    /** Boost = MAP - baro, in PSI. Negative = vacuum.
-     *  -0.85 PSI calibration offset corrects systematic +0.8-1 PSI over-read. */
+    /** Boost psi. Prefers 2210A6 direct value when available; falls back to
+     *  MAP-baro calculation with calibration offset. */
     public float boostPsi() {
+        if (boostPsiDirect > -90f) return boostPsiDirect;
         return (mapKpa - baroKpa) / 6.89476f - 0.85f;
     }
+
+    public float iatF()  { return iatC * 9f/5f + 32f; }
+    public float chargeAirTempF() { return chargeAirTempC * 9f/5f + 32f; }
 
     /** Throttle motor duty centred at 0 (range -100 to +100 %) */
     public float throttleMotorCentred() { return throttleMotorPct; }
 
-    /** CVT belt slip % — turbine vs secondary pulley */
+    /** CVT torque converter slip — direct from 221153 when available, else calculated. */
     public float cvtSlipPct() {
+        if (torqueConverterSlipRpm >= 0f && turbineRpm > 100f)
+            return torqueConverterSlipRpm / turbineRpm * 100f;
         if (turbineRpm < 100f) return 0f;
         return Math.abs(turbineRpm - secondaryRpm) / turbineRpm * 100f;
     }
