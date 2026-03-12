@@ -113,10 +113,13 @@ public class DashData {
     /** Throttle motor duty centred at 0 (range -100 to +100 %) */
     public float throttleMotorCentred() { return throttleMotorPct; }
 
-    /** CVT torque converter slip — direct from 221153 when available, else calculated. */
+    /** CVT torque converter slip — direct from 221153 when available, else calculated.
+     *  Sanity-capped: if direct PID gives >50% (unreasonable for TC slip), fall back. */
     public float cvtSlipPct() {
-        if (torqueConverterSlipRpm >= 0f && turbineRpm > 100f)   // -1 means not received yet
-            return torqueConverterSlipRpm / turbineRpm * 100f;
+        if (torqueConverterSlipRpm >= 0f && turbineRpm > 100f) {
+            float pct = torqueConverterSlipRpm / turbineRpm * 100f;
+            if (pct <= 50f) return pct;   // plausible — use direct PID
+        }
         if (turbineRpm < 100f) return 0f;
         return Math.abs(turbineRpm - secondaryRpm) / turbineRpm * 100f;
     }

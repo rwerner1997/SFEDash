@@ -280,7 +280,7 @@ public class OBDManager {
                 setHeader("7E0", "7E8");
                 parseThrottleAngle(sendCmdTimeout("221022", CMD_TIMEOUT_SLOW));  // throttle body °
                 parseBoostDirect(sendCmdTimeout("2210A6", CMD_TIMEOUT_SLOW));    // direct boost psi
-                parseKnockCorr(sendCmdTimeout("2210AF", CMD_TIMEOUT_SLOW));
+                parseKnockCorr(sendCmdTimeout("223018", CMD_TIMEOUT_SLOW));      // was 2210AF (spec §7) — reverted; 223018 confirmed working
                 parseWastegate(sendCmdTimeout("2210A8", CMD_TIMEOUT_SLOW));
                 parseIAT(sendCmdTimeout("22101F", CMD_TIMEOUT_SLOW));
                 parseTargetBoost(sendCmdTimeout("2210A7", CMD_TIMEOUT_SLOW));
@@ -337,14 +337,14 @@ public class OBDManager {
             // ════════════════════════════════════════════════════
             if (loopCount % 10 == 5) {
                 setHeaderForce("7E1", "7E9");  // force re-send every time: ELM clones may silently drop ATCRA7E9
-                parseCVTTemp(sendCmdTimeout("221021", CMD_TIMEOUT_SLOW));        // shown on TEMPS — always poll
+                parseCVTTemp(sendCmdTimeout("221017", CMD_TIMEOUT_SLOW));        // was 221021 (spec §9) — reverted; 221017 confirmed working on car
                 if (data.activePage == 3) {
                     parseLockup(sendCmdTimeout("221045", CMD_TIMEOUT_SLOW));
                     parseTransfer(sendCmdTimeout("221065", CMD_TIMEOUT_SLOW));
                     parseTurbineRpm(sendCmdTimeout("221067", CMD_TIMEOUT_SLOW));
-                    parsePrimaryRpm(sendCmdTimeout("221151", CMD_TIMEOUT_SLOW));     // was 22300E — input shaft
-                    parseSecondaryRpm(sendCmdTimeout("221152", CMD_TIMEOUT_SLOW));   // was 2230D0 — output shaft
-                    parseGearRatioAct(sendCmdTimeout("221150", CMD_TIMEOUT_SLOW));   // was 2230DA
+                    parsePrimaryRpm(sendCmdTimeout("22300E", CMD_TIMEOUT_SLOW));     // was 221151 (spec §9) — reverted
+                    parseSecondaryRpm(sendCmdTimeout("2230D0", CMD_TIMEOUT_SLOW));   // was 221152 (spec §9) — reverted
+                    parseGearRatioAct(sendCmdTimeout("2230DA", CMD_TIMEOUT_SLOW));   // was 221150 (spec §9) — reverted
                     parseGearRatioTgt(sendCmdTimeout("2230F8", CMD_TIMEOUT_SLOW));
                     parseTorqueConvSlip(sendCmdTimeout("221153", CMD_TIMEOUT_SLOW)); // spec §9 — direct slip rpm
                     parsePriPulley(sendCmdTimeout("2210D2", CMD_TIMEOUT_SLOW));
@@ -675,8 +675,8 @@ public class OBDManager {
     }
 
     private void parseKnockCorr(String r) {
-        // 2210AF — feedback knock correction degrees (spec §7; was 223018)
-        // Range: 0→-32°, 128→0°, 255→31.75° (retard is negative)
+        // 223018 — feedback knock correction degrees (reverted from spec §7 2210AF — wrong parameter)
+        // ScanGauge MTH 00010004FFE0: Range: 0→-32°, 128→0°, 255→31.75° (retard is negative)
         if (isError(r)) return;
         int a = m22byte(r, 0); if (a < 0) return;
         data.knockCorr = a / 4f - 32f;
@@ -788,7 +788,7 @@ public class OBDManager {
     // ── Mode 22 TCU parsers ────────────────────────────────────────
 
     private void parseCVTTemp(String r) {
-        // 221021 — CVT fluid temperature °C (spec §9; was 221017)
+        // 221017 — CVT fluid temperature °C (reverted from spec §9 221021 — that PID not responding)
         if (isError(r)) return;
         int a = m22byte(r, 0); if (a < 0) return;
         float v = a - 40f;
