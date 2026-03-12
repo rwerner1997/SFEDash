@@ -759,6 +759,26 @@ public class DashView extends SurfaceView implements SurfaceHolder.Callback {
         }
     }
 
+    // ── PAGE DOT INDICATOR ────────────────────────────────────────
+
+    /** One dot per page, centred at y=456.  Active page = glowing accent dot;
+     *  others = small dim squares.  Called by all non-drive page draw methods. */
+    private void drawPageDots(Canvas c, Theme t) {
+        fillRect(c, 0, 451, LW, 10, t.dim, 1f);
+        int ndots = PAGES.length;
+        float dotTot = ndots * 9f + (ndots - 1) * 4f;
+        float sx = (LW - dotTot) / 2f;
+        for (int i = 0; i < ndots; i++) {
+            float dx = sx + i * 13f + 4.5f;
+            if (i == pageIdx) glowDot(c, dx, 456, 3f, t.accent);
+            else {
+                fillP.setColor(ac(t.border, 0.65f));
+                fillP.setStyle(Paint.Style.FILL);
+                c.drawRect(dx - 2, 454, dx + 2, 458, fillP);
+            }
+        }
+    }
+
     // ── STATUS BAR ────────────────────────────────────────────────
 
     private void drawStatusBar(Canvas c, Theme t) {
@@ -894,13 +914,7 @@ public class DashView extends SurfaceView implements SurfaceHolder.Callback {
         fillRect(c, 28,441,(int)(thrV/100f*252),5, tc, 1f);
         strokeRect(c, 28,441,252,5, t.border, 0.4f, 1f);
         // Page dots
-        fillRect(c, 0,451,LW,10, t.dim, 1f);
-        int ndots=PAGES.length; float dotTot=ndots*9f+(ndots-1)*4f, sx2=(LW-dotTot)/2f;
-        for (int i=0;i<ndots;i++) {
-            float dx=sx2+i*13f+4.5f;
-            if (i==pageIdx) glowDot(c, dx,456, 3f, t.accent);
-            else { fillP.setColor(ac(t.border,0.65f)); fillP.setStyle(Paint.Style.FILL); c.drawRect(dx-2,454,dx+2,458,fillP); }
-        }
+        drawPageDots(c, t);
         // Mini stats strip
         fillRect(c, 0,461,LW,19, t.dim, 1f); hline(c,t,461);
         DashData d = DashData.get();
@@ -1247,9 +1261,10 @@ public class DashView extends SurfaceView implements SurfaceHolder.Callback {
             strokeRect(c,bx,by,bw,5, t.border, 0.4f, 1f);
         }
         hline(c,t,396);
-        // Status strip — RPM + Speed now that bottom bar is gone
+        // Status strip — RPM + Speed
         DashData ds=DashData.get();
         fillRect(c,0,396,LW,LH-396, t.dim, 1f);
+        drawPageDots(c, t);
         int[] scols2={bandColor(PAGES[0].pids[0],ds.rpm,t), bandColor(PAGES[6].pids[1],ds.speedMph(),t), ds.connected?t.green:t.orange};
         String[] slbls2={"RPM","MPH","OBD"}; String[] svals2={String.valueOf(Math.round(ds.rpm)),String.valueOf(Math.round(ds.speedMph())),ds.btStatus};
         for(int i=0;i<3;i++){
@@ -1304,6 +1319,7 @@ public class DashView extends SurfaceView implements SurfaceHolder.Callback {
         sf(11,true,true); textP.setColor(d.knockEventCount>0?t.red:t.green); textP.setTextAlign(Paint.Align.RIGHT);
         c.drawText(String.valueOf(d.knockEventCount), LW-10, sY+15, textP);
         hline(c,t,sY+22);
+        drawPageDots(c, t);
     }
 
     // ── DRIVE MODE ────────────────────────────────────────────────
@@ -1316,7 +1332,7 @@ public class DashView extends SurfaceView implements SurfaceHolder.Callback {
 
         PidDef rpmPid=PAGES[0].pids[0], bstPid=PAGES[2].pids[0];
         PidDef lodPid=PAGES[0].pids[1], oilPid=PAGES[1].pids[1];
-        PidDef knkPid=PAGES[7].pids[3];
+        PidDef knkPid=PAGES[7].pids[1];  // index 1 = KNOCK CORR (was 3 before timing page reshuffle)
 
         int bstCol=bandColor(bstPid,boost,t), lodCol=bandColor(lodPid,load,t);
         int oilCol=bandColor(oilPid,oil,t);
