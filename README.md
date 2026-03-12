@@ -1,28 +1,3 @@
-# SFE OBD Dashboard — Android APK
-
-## Build Instructions (5 minutes)
-
-### Requirements
-- Android Studio Hedgehog (2023.1) or newer — free at https://developer.android.com/studio
-- Android SDK installed (Android Studio installs it automatically on first launch)
-- Your phone must have the Veepeak OBDII adapter already PAIRED in Android Settings → Bluetooth
-  - Device name: OBDII
-  - PIN: 1234
-
-### Steps
-1. Open Android Studio → "Open an Existing Project" → select this folder (SFEDash/)
-2. Let Gradle sync (bottom bar — takes ~1 min first time, downloads dependencies)
-3. Plug in your phone via USB with Developer Mode + USB Debugging enabled
-   OR just build the APK file:
-   Build → Build Bundle(s) / APK(s) → Build APK(s)
-4. APK appears at:  app/build/outputs/apk/debug/app-debug.apk
-5. Sideload to phone:  adb install app/build/outputs/apk/debug/app-debug.apk
-
-### Phone Setup (one-time)
-1. Settings → Bluetooth → Pair new device → "OBDII" → PIN 1234
-2. Settings → Developer Options → Enable USB Debugging
-3. Settings → Install Unknown Apps (if sideloading without Android Studio)
-
 ### Controls
 | Button      | Tap              | Long Press (0.6s) | Double Tap  |
 |-------------|------------------|-------------------|-------------|
