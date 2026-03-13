@@ -307,6 +307,7 @@ public class OBDManager {
                 parseTargetMAP(sendCmdTimeout("223050", CMD_TIMEOUT_SLOW));
                 parseBattTemp(sendCmdTimeout("22309A", CMD_TIMEOUT_SLOW));
                 // Roughness only needed on ROUGHNESS page (4)
+                // PIDs confirmed by ScanGauge RM1-RM4 for FA20DIT WRX (firmware 4.22+)
                 if (ap == 4) {
                     parseRoughness(sendCmdTimeout("223062", CMD_TIMEOUT_SLOW), 1);
                     parseRoughness(sendCmdTimeout("223048", CMD_TIMEOUT_SLOW), 2);
@@ -675,7 +676,8 @@ public class OBDManager {
     }
 
     private void parseKnockCorr(String r) {
-        // 223018 — feedback knock correction degrees (reverted from spec §7 2210AF — wrong parameter)
+        // 223018 — feedback knock correction degrees (ScanGauge confirmed for FA20DIT WRX)
+        // Note: 2210AF = Engine Oil Temperature (ScanGauge EOT), NOT knock correction
         // ScanGauge MTH 00010004FFE0: Range: 0→-32°, 128→0°, 255→31.75° (retard is negative)
         if (isError(r)) return;
         int a = m22byte(r, 0); if (a < 0) return;
@@ -832,8 +834,8 @@ public class OBDManager {
     }
 
     private void parseGearRatioAct(String r) {
-        // 221150 — CVT ratio actual (spec §9; was 2230DA). TODO: verify formula on car.
-        // Assumes word / 1000 = ratio (e.g. 2500 = 2.500, 400 = 0.400)
+        // 2230DA — CVT ratio actual (ScanGauge confirmed for Subaru CVT; was spec §9 221150).
+        // Word assumed to encode ratio * 1000 (e.g. 2500 = 2.500). TODO: verify on car.
         if (isError(r)) return;
         int v = m22word(r); if (v < 0) return;
         data.gearRatioAct = v / 1000f;

@@ -38,7 +38,7 @@ public class DashData {
     public volatile float oilTempC      = 43f;
     public volatile float catTempC      = 400f;   // °C — catalyst temp bank 1 (013C, Mode 01)
     public volatile float iatC          = 20f;    // 22101F — intake air temperature (°C)
-    public volatile float knockCorr     = 0f;     // 2210AF — feedback knock correction (deg, neg=retard)
+    public volatile float knockCorr     = 0f;     // 223018 — feedback knock correction (deg, neg=retard)
     public volatile float fineKnockDeg  = 0f;     // 2210B0 — fine knock learning (deg)
     public volatile float rough1        = 0.2f;
     public volatile float rough2        = 0.1f;
@@ -80,9 +80,9 @@ public class DashData {
     public volatile float lockupPct     = 0f;     // 221045
     public volatile float transferPct   = 5f;     // 221065
     public volatile float turbineRpm    = 820f;   // 221067
-    public volatile float primaryRpm    = 820f;   // 221151 — input shaft speed (rpm)
-    public volatile float secondaryRpm  = 820f;   // 221152 — output shaft speed (rpm)
-    public volatile float gearRatioAct  = 2.50f;  // 221150 — CVT ratio actual
+    public volatile float primaryRpm    = 820f;   // 22300E — primary pulley speed (rpm)
+    public volatile float secondaryRpm  = 820f;   // 2230D0 — secondary pulley speed (rpm)
+    public volatile float gearRatioAct  = 2.50f;  // 2230DA — CVT ratio actual
     public volatile float gearRatioTgt  = 2.50f;  // 2230F8 — CVT ratio target
     public volatile float torqueConverterSlipRpm = -1f; // 221153 — torque converter slip (rpm); -1 = not yet received
     // From CarScanner log PIDs
