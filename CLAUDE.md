@@ -95,10 +95,6 @@ Source: ScanGauge Outback CVT XGauge page.
 - `isError(r)` — true if response is null, "NO DATA", "ERROR", "?", or empty.
 - Response format: `"62 XX XX [data bytes] >"` — `62` = Mode 22 positive response.
 
-## Known Bugs (buglist.txt)
-1. Boot screen shows TR580 / Crosstrek instead of TR690 / Forester
-2. Hex numbers in background on boot screen need to be removed
-
 ## Build
 ```
 ./gradlew assembleDebug
