@@ -250,29 +250,26 @@ public class OBDManager {
             long t0 = System.currentTimeMillis();
 
             // ════════════════════════════════════════════════════
-            // TIER 1 — FAST: every loop (~10-15Hz) — MODE 01
-            // Standard OBD-II PIDs; reliable across all vehicles.
+            // TIER 1 — FAST: every loop (~20Hz target) — RPM + Speed only.
+            // Two PIDs, same header — minimum overhead for maximum refresh.
             // ════════════════════════════════════════════════════
             setHeader("7DF", "7E8");
             parseRPM(sendCmd("010C"));
             parseSpeed(sendCmd("010D"));
-            parseMAP(sendCmd("010B"));
-            parsePedal(sendCmd("0145"));   // Relative Accelerator Pedal Position
-            parseCatTemp(sendCmd("013C"));
 
             // ════════════════════════════════════════════════════
-            // TIER 2 — MEDIUM: every 3rd loop (~3-5Hz)
-            // Load, fuel trim, oil/cat temps (Mode 01, no Mode 22 equivalent).
+            // TIER 2 — MEDIUM: every 3rd loop (~7Hz)
+            // MAP, MAF, timing, throttle, pedal, fuel trims (Mode 01).
             // Knock, wastegate, IAT, target boost, fine knock (Mode 22).
             // ════════════════════════════════════════════════════
             if (loopCount % 3 == 0) {
                 // Mode 01 — engine vitals
                 setHeader("7DF", "7E8");
-                parseLoad(sendCmd("0104"));
-                parseCoolant(sendCmd("0105"));
-                parseOilTemp(sendCmd("015C"));
+                parseMAP(sendCmd("010B"));
                 parseTiming(sendCmd("010E"));
                 parseMAF(sendCmd("0110"));
+                parsePedal(sendCmd("0145"));
+                parseLoad(sendCmd("0104"));
                 parseSTFT(sendCmd("0106"));
                 parseLTFT(sendCmd("0107"));
 
@@ -298,6 +295,9 @@ public class OBDManager {
                 int ap = data.activePage;
                 // Switch back to 7DF for Mode 01 PIDs
                 setHeader("7DF", "7E8");
+                parseCoolant(sendCmd("0105"));
+                parseOilTemp(sendCmd("015C"));
+                parseCatTemp(sendCmd("013C"));
                 parseBaro(sendCmd("0133"));
                 parseFuelLevel(sendCmd("012F"));   // fuel tank level (Mode 01)
                 parseBattery(sendCmd("ATRV"));
@@ -343,11 +343,10 @@ public class OBDManager {
                     parseLockup(sendCmdTimeout("221045", CMD_TIMEOUT_SLOW));
                     parseTransfer(sendCmdTimeout("221065", CMD_TIMEOUT_SLOW));
                     parseTurbineRpm(sendCmdTimeout("221067", CMD_TIMEOUT_SLOW));
-                    parsePrimaryRpm(sendCmdTimeout("22300E", CMD_TIMEOUT_SLOW));     // was 221151 (spec §9) — reverted
-                    parseSecondaryRpm(sendCmdTimeout("2230D0", CMD_TIMEOUT_SLOW));   // was 221152 (spec §9) — reverted
-                    parseGearRatioAct(sendCmdTimeout("2230DA", CMD_TIMEOUT_SLOW));   // was 221150 (spec §9) — reverted
+                    parsePrimaryRpm(sendCmdTimeout("22300E", CMD_TIMEOUT_SLOW));     // confirmed; used for cvtSlipPct()
+                    parseSecondaryRpm(sendCmdTimeout("2230D0", CMD_TIMEOUT_SLOW));
+                    parseGearRatioAct(sendCmdTimeout("2230DA", CMD_TIMEOUT_SLOW));
                     parseGearRatioTgt(sendCmdTimeout("2230F8", CMD_TIMEOUT_SLOW));
-                    parseTorqueConvSlip(sendCmdTimeout("221153", CMD_TIMEOUT_SLOW)); // spec §9 — direct slip rpm
                     parsePriPulley(sendCmdTimeout("2210D2", CMD_TIMEOUT_SLOW));
                     setHeader("7E0", "7E8");
                     parseCvtMode(sendCmdTimeout("221299", CMD_TIMEOUT_SLOW));
@@ -846,13 +845,6 @@ public class OBDManager {
         if (isError(r)) return;
         int v = m22word(r); if (v < 0) return;
         data.gearRatioTgt = v * 100f / 255f;
-    }
-
-    private void parseTorqueConvSlip(String r) {
-        // 221153 — torque converter slip rpm (spec §9). TODO: verify formula on car.
-        if (isError(r)) return;
-        int v = m22word(r); if (v < 0) return;
-        data.torqueConverterSlipRpm = v;
     }
 
     private void parsePriPulley(String r) {
