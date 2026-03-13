@@ -3,6 +3,10 @@ package com.sfe.dashboard;
 /**
  * Shared data store — written by OBDManager thread, read by DashView render thread.
  * All fields are volatile for safe cross-thread access without locking.
+ *
+ * Unpolled fields are initialised to Float.NaN — DashView shows "---" until real
+ * data arrives.  Parse methods leave fields unchanged on error so the last good
+ * value is retained; NaN persists only until the first successful poll.
  */
 public class DashData {
 
@@ -20,80 +24,79 @@ public class DashData {
     public volatile int     pollHz      = 0;       // rolling average polls/sec
 
     // ── MODE 22 BURST Tier 1 (AT SH 7E0) + MODE 01 slow PIDs ────
-    public volatile float rpm        = 820f;     // 221027
-    public volatile float speedKph   = 0f;       // 221028
-    public volatile float throttlePct= 1.2f;     // 221022 — throttle body angle
-    public volatile float pedalPct   = 1.2f;     // 221023 — accelerator pedal position
-    public volatile float loadPct    = 12f;      // 0104 Mode 01
-    public volatile float coolantC   = 57f;      // 221020
-    public volatile float timingDeg  = 8.4f;     // 22102A
-    public volatile float mafGs      = 1.4f;     // 221026
-    public volatile float mapKpa     = 97.8f;    // 221024 — absolute MAP kPa
-    public volatile float stftPct    = 0f;       // 0106 Mode 01
-    public volatile float ltftPct    = 0f;       // 0107 Mode 01
-    public volatile float baroKpa    = 97.8f;    // 0133 Mode 01 — updated once at connect
-    public volatile float battV      = 13.8f;
+    public volatile float rpm        = Float.NaN; // 221027
+    public volatile float speedKph   = Float.NaN; // 221028
+    public volatile float throttlePct= Float.NaN; // 221022 — throttle body angle
+    public volatile float pedalPct   = Float.NaN; // 221023 — accelerator pedal position
+    public volatile float loadPct    = Float.NaN; // 0104 Mode 01
+    public volatile float coolantC   = Float.NaN; // 221020
+    public volatile float timingDeg  = Float.NaN; // 22102A
+    public volatile float mafGs      = Float.NaN; // 221026
+    public volatile float mapKpa     = Float.NaN; // 221024 — absolute MAP kPa
+    public volatile float stftPct    = Float.NaN; // 0106 Mode 01
+    public volatile float ltftPct    = Float.NaN; // 0107 Mode 01
+    public volatile float baroKpa    = Float.NaN; // 0133 Mode 01 — updated once at connect
+    public volatile float battV      = Float.NaN;
 
     // ── MODE 22 ECU (AT SH 7E0) ──────────────────────────────────
-    public volatile float oilTempC      = 43f;
-    public volatile float catTempC      = 400f;   // °C — catalyst temp bank 1 (013C, Mode 01)
-    public volatile float iatC          = 20f;    // 22101F — intake air temperature (°C)
-    public volatile float knockCorr     = 0f;     // 223018 — feedback knock correction (deg, neg=retard)
-    public volatile float fineKnockDeg  = 0f;     // 2210B0 — fine knock learning (deg)
-    public volatile float rough1        = 0.2f;
-    public volatile float rough2        = 0.1f;
-    public volatile float rough3        = 0.3f;
-    public volatile float rough4        = 0.1f;
-    public volatile float boostPsiDirect = -99f;  // 2210A6 — direct boost pressure (psi); -99 = unavailable
-    public volatile float wastegatePct  = 0f;     // 2210A8 — wastegate duty (%)
-    public volatile float targetBoostPsi = 0f;    // 2210A7 — target boost pressure (psi)
-    public volatile float turboSpeedRpm = 0f;     // 2210A9 — turbo speed estimate (rpm)
-    public volatile float chargeAirTempC = 25f;   // 2210AA — charge air / intercooler temp (°C)
-    public volatile float ocvIntakeL    = 20f;    // 2210BB — OCV intake left (% duty)
-    public volatile float ocvIntakeR    = 20f;    // 22109B
-    public volatile float ocvExhL       = 35f;    // 2210EF
-    public volatile float ocvExhR       = 35f;    // 2210CF
-    public volatile float targetMapKpa  = 97.8f;  // 223050 — target MAP (kPa)
-    public volatile float battTempC     = 20f;    // 22309A
-    public volatile float altDutyPct    = 70f;    // 221093
-    public volatile float fuelPumpPct   = 50f;    // 2210B3
+    public volatile float oilTempC      = Float.NaN;
+    public volatile float catTempC      = Float.NaN; // °C — catalyst temp bank 1 (013C, Mode 01)
+    public volatile float iatC          = Float.NaN; // 22101F — intake air temperature (°C)
+    public volatile float knockCorr     = Float.NaN; // 223018 — feedback knock correction (deg, neg=retard)
+    public volatile float fineKnockDeg  = Float.NaN; // 2210B0 — fine knock learning (deg)
+    public volatile float rough1        = Float.NaN;
+    public volatile float rough2        = Float.NaN;
+    public volatile float rough3        = Float.NaN;
+    public volatile float rough4        = Float.NaN;
+    public volatile float boostPsiDirect = Float.NaN; // 2210A6 — direct boost pressure (psi)
+    public volatile float wastegatePct  = Float.NaN; // 2210A8 — wastegate duty (%)
+    public volatile float targetBoostPsi = Float.NaN; // 2210A7 — target boost pressure (psi)
+    public volatile float turboSpeedRpm = Float.NaN; // 2210A9 — turbo speed estimate (rpm)
+    public volatile float chargeAirTempC = Float.NaN; // 2210AA — charge air / intercooler temp (°C)
+    public volatile float ocvIntakeL    = Float.NaN; // 2210BB — OCV intake left (% duty)
+    public volatile float ocvIntakeR    = Float.NaN; // 22109B
+    public volatile float ocvExhL       = Float.NaN; // 2210EF
+    public volatile float ocvExhR       = Float.NaN; // 2210CF
+    public volatile float targetMapKpa  = Float.NaN; // 223050 — target MAP (kPa)
+    public volatile float battTempC     = Float.NaN; // 22309A
+    public volatile float altDutyPct    = Float.NaN; // 221093
+    public volatile float fuelPumpPct   = Float.NaN; // 2210B3
 
     // ── MODE 22 ECU — additional ScanGauge / spec PIDs ───────────
-    public volatile float injPulseMs       = 0f;   // 2210C0 — injector pulse width (ms)
-    public volatile float injDutyCyclePct  = 0f;   // 2210C1 — injector duty cycle (%)
-    public volatile float afrLambda        = 1.0f; // 2210C3 — air/fuel ratio (lambda)
-    public volatile float targetAfrLambda  = 1.0f; // 2210C4 — target AFR (lambda)
-    public volatile float hpfpPsi          = 0f;   // 2210C7 — high pressure fuel pump (psi)
-    public volatile float radFanPct        = 0f;   // 2210E3 — radiator fan control (%)
-    public volatile float vvtAngleR        = 0f;   // 221099 — VVT advance angle right (°)
-    public volatile float vvtAngleL        = 0f;   // 2210B9 — VVT advance angle left  (°)
-    public volatile float throttleMotorPct = 0f;   // 22105F — throttle motor duty (%)
-    public volatile float cpcValvePct      = 0f;   // 2210CB — CPC valve duty (%)
-    public volatile float osvLPct          = 0f;   // 2210E5 — OSV duty left  (%)
-    public volatile float osvRPct          = 0f;   // 2210C5 — OSV duty right (%)
-    public volatile int   fuelTankPressKpa = 0;    // 22108F — fuel tank air pressure (raw word)
-    public volatile float damRatio         = 1.0f; // 2210B1 — dynamic advance multiplier (ratio)
-    public volatile float fuelLevelPct     = 50f;  // 012F   — fuel level (%)
+    public volatile float injPulseMs       = Float.NaN; // 2210C0 — injector pulse width (ms)
+    public volatile float injDutyCyclePct  = Float.NaN; // 2210C1 — injector duty cycle (%)
+    public volatile float afrLambda        = Float.NaN; // 2210C3 — air/fuel ratio (lambda)
+    public volatile float targetAfrLambda  = Float.NaN; // 2210C4 — target AFR (lambda)
+    public volatile float hpfpPsi          = Float.NaN; // 2210C7 — high pressure fuel pump (psi)
+    public volatile float radFanPct        = Float.NaN; // 2210E3 — radiator fan control (%)
+    public volatile float vvtAngleR        = Float.NaN; // 221099 — VVT advance angle right (°)
+    public volatile float vvtAngleL        = Float.NaN; // 2210B9 — VVT advance angle left  (°)
+    public volatile float throttleMotorPct = Float.NaN; // 22105F — throttle motor duty (%)
+    public volatile float cpcValvePct      = Float.NaN; // 2210CB — CPC valve duty (%)
+    public volatile float osvLPct          = Float.NaN; // 2210E5 — OSV duty left  (%)
+    public volatile float osvRPct          = Float.NaN; // 2210C5 — OSV duty right (%)
+    public volatile int   fuelTankPressKpa = 0;         // 22108F — fuel tank air pressure (raw word)
+    public volatile float damRatio         = Float.NaN; // 2210B1 — dynamic advance multiplier (ratio)
+    public volatile float fuelLevelPct     = Float.NaN; // 012F   — fuel level (%)
 
     // ── MODE 22 TCU (AT SH 7E1) ──────────────────────────────────
-    public volatile float cvtTempC      = 27f;    // 221021 — CVT fluid temperature (°C)
-    public volatile float lockupPct     = 0f;     // 221045
-    public volatile float transferPct   = 5f;     // 221065
-    public volatile float turbineRpm    = 820f;   // 221067
-    public volatile float primaryRpm    = 820f;   // 22300E — primary pulley speed (rpm)
-    public volatile float secondaryRpm  = 820f;   // 2230D0 — secondary pulley speed (rpm)
-    public volatile float gearRatioAct  = 2.50f;  // 2230DA — CVT ratio actual
-    public volatile float gearRatioTgt  = 2.50f;  // 2230F8 — CVT ratio target
-    public volatile float torqueConverterSlipRpm = -1f; // 221153 — torque converter slip (rpm); -1 = not yet received
+    public volatile float cvtTempC      = Float.NaN; // 221021 — CVT fluid temperature (°C)
+    public volatile float lockupPct     = Float.NaN; // 221045
+    public volatile float transferPct   = Float.NaN; // 221065
+    public volatile float turbineRpm    = Float.NaN; // 221067
+    public volatile float primaryRpm    = Float.NaN; // 22300E — primary pulley speed (rpm)
+    public volatile float secondaryRpm  = Float.NaN; // 2230D0 — secondary pulley speed (rpm)
+    public volatile float gearRatioAct  = Float.NaN; // 2230DA — CVT ratio actual
+    public volatile float gearRatioTgt  = Float.NaN; // 2230F8 — CVT ratio target
     // From CarScanner log PIDs
-    public volatile int   priPulleyRaw  = 0;   // 2210D2 from TCU — primary pulley (raw)
-    public volatile int   cvtModeRaw    = 0;   // 221299 from ECM — CVT mode/range (raw)
+    public volatile int   priPulleyRaw  = 0;  // 2210D2 from TCU — primary pulley (raw)
+    public volatile int   cvtModeRaw    = 0;  // 221299 from ECM — CVT mode/range (raw)
 
     // ── Derived (computed in getter, not polled) ─────────────────
     public float speedMph()     { return speedKph * 0.621371f; }
     public float coolantF()     { return coolantC  * 9f/5f + 32f; }
     public float oilTempF()     { return oilTempC  * 9f/5f + 32f; }
-    public float catTempF()  { return catTempC * 9f/5f + 32f; }
+    public float catTempF()     { return catTempC  * 9f/5f + 32f; }
     public float cvtTempF()     { return cvtTempC  * 9f/5f + 32f; }
     public float battTempF()    { return battTempC * 9f/5f + 32f; }
     public float mapPsi()       { return mapKpa     / 6.89476f; }
@@ -101,9 +104,10 @@ public class DashData {
     public float baroPsi()      { return baroKpa   / 6.89476f; }
 
     /** Boost psi. Prefers 2210A6 direct value when available; falls back to
-     *  MAP-baro calculation with calibration offset. */
+     *  MAP-baro calculation with calibration offset. Returns NaN if no data. */
     public float boostPsi() {
-        if (boostPsiDirect > -90f) return boostPsiDirect;
+        if (!Float.isNaN(boostPsiDirect)) return boostPsiDirect;
+        if (Float.isNaN(mapKpa) || Float.isNaN(baroKpa)) return Float.NaN;
         return (mapKpa - baroKpa) / 6.89476f - 0.85f;
     }
 
@@ -113,15 +117,12 @@ public class DashData {
     /** Throttle motor duty centred at 0 (range -100 to +100 %) */
     public float throttleMotorCentred() { return throttleMotorPct; }
 
-    /** CVT torque converter slip — direct from 221153 when available, else calculated.
-     *  Sanity-capped: if direct PID gives >50% (unreasonable for TC slip), fall back. */
+    /** CVT torque-converter slip derived from engine RPM vs primary pulley RPM.
+     *  When TC is locked primaryRpm ≈ rpm → slip ≈ 0%.
+     *  Returns NaN until both values have been received. */
     public float cvtSlipPct() {
-        if (torqueConverterSlipRpm >= 0f && turbineRpm > 100f) {
-            float pct = torqueConverterSlipRpm / turbineRpm * 100f;
-            if (pct <= 50f) return pct;   // plausible — use direct PID
-        }
-        if (turbineRpm < 100f) return 0f;
-        return Math.abs(turbineRpm - secondaryRpm) / turbineRpm * 100f;
+        if (Float.isNaN(rpm) || Float.isNaN(primaryRpm) || rpm < 200f) return Float.NaN;
+        return Math.max(0f, (rpm - primaryRpm) / rpm * 100f);
     }
 
     /** Estimated HP: (MAF * 14.7 * BSFC) very rough proxy */
@@ -132,40 +133,40 @@ public class DashData {
     // ── Knock session tracking ───────────────────────────────────
     public volatile int knockEventCount = 0;
     public void recordKnockEvent() {
-        if (knockCorr < -2.5f) knockEventCount++;
+        if (!Float.isNaN(knockCorr) && knockCorr < -2.5f) knockEventCount++;
     }
 
     // ── Peak values ──────────────────────────────────────────────
-    public volatile float peakBoostPsi   = -99f;
-    public volatile float peakRpm        = 0f;
-    public volatile float peakTimingDeg  = -99f;
-    public volatile float peakLoadPct    = 0f;
-    public volatile float peakSpeedMph   = 0f;
-    public volatile float worstKnockCorr = 0f;
-    public volatile float peakMafGs      = 0f;
-    public volatile float peakEstHp      = 0f;
-    public volatile float peakCatTempF   = 0f;
+    public volatile float peakBoostPsi   = Float.NaN;
+    public volatile float peakRpm        = Float.NaN;
+    public volatile float peakTimingDeg  = Float.NaN;
+    public volatile float peakLoadPct    = Float.NaN;
+    public volatile float peakSpeedMph   = Float.NaN;
+    public volatile float worstKnockCorr = Float.NaN;
+    public volatile float peakMafGs      = Float.NaN;
+    public volatile float peakEstHp      = Float.NaN;
+    public volatile float peakCatTempF   = Float.NaN;
 
     public void updatePeaks() {
         float b = boostPsi();
-        if (b > peakBoostPsi)         peakBoostPsi   = b;
-        if (rpm > peakRpm)            peakRpm        = rpm;
-        if (timingDeg > peakTimingDeg) peakTimingDeg = timingDeg;
-        if (loadPct > peakLoadPct)    peakLoadPct    = loadPct;
+        if (!Float.isNaN(b) && (Float.isNaN(peakBoostPsi) || b > peakBoostPsi))                   peakBoostPsi   = b;
+        if (!Float.isNaN(rpm) && (Float.isNaN(peakRpm) || rpm > peakRpm))                         peakRpm        = rpm;
+        if (!Float.isNaN(timingDeg) && (Float.isNaN(peakTimingDeg) || timingDeg > peakTimingDeg)) peakTimingDeg  = timingDeg;
+        if (!Float.isNaN(loadPct) && (Float.isNaN(peakLoadPct) || loadPct > peakLoadPct))         peakLoadPct    = loadPct;
         float s = speedMph();
-        if (s > peakSpeedMph)         peakSpeedMph   = s;
-        if (knockCorr < worstKnockCorr) worstKnockCorr = knockCorr;
-        if (mafGs > peakMafGs)        peakMafGs      = mafGs;
+        if (!Float.isNaN(s) && (Float.isNaN(peakSpeedMph) || s > peakSpeedMph))                   peakSpeedMph   = s;
+        if (!Float.isNaN(knockCorr) && (Float.isNaN(worstKnockCorr) || knockCorr < worstKnockCorr)) worstKnockCorr = knockCorr;
+        if (!Float.isNaN(mafGs) && (Float.isNaN(peakMafGs) || mafGs > peakMafGs))                 peakMafGs      = mafGs;
         float hp = estHp();
-        if (hp > peakEstHp)           peakEstHp      = hp;
+        if (!Float.isNaN(hp) && (Float.isNaN(peakEstHp) || hp > peakEstHp))                       peakEstHp      = hp;
         float ct = catTempF();
-        if (ct > peakCatTempF)        peakCatTempF   = ct;
+        if (!Float.isNaN(ct) && (Float.isNaN(peakCatTempF) || ct > peakCatTempF))                 peakCatTempF   = ct;
     }
 
     public void resetPeaks() {
-        peakBoostPsi = -99f; peakRpm = 0f; peakTimingDeg = -99f;
-        peakLoadPct = 0f; peakSpeedMph = 0f; worstKnockCorr = 0f;
-        peakMafGs = 0f; peakEstHp = 0f; peakCatTempF = 0f;
+        peakBoostPsi = Float.NaN; peakRpm = Float.NaN; peakTimingDeg = Float.NaN;
+        peakLoadPct  = Float.NaN; peakSpeedMph = Float.NaN; worstKnockCorr = Float.NaN;
+        peakMafGs    = Float.NaN; peakEstHp = Float.NaN; peakCatTempF = Float.NaN;
         knockEventCount = 0;
     }
 }

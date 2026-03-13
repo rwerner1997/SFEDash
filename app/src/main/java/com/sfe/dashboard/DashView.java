@@ -528,6 +528,7 @@ public class DashView extends SurfaceView implements SurfaceHolder.Callback {
     }
 
     private int bandColor(PidDef pid, float v, Theme t) {
+        if (Float.isNaN(v)) return ac(t.label, 0.35f);
         for (int i = 0; i < pid.bandLo.length; i++) {
             if (v >= pid.bandLo[i] && v < pid.bandHi[i]) return themeColor(t, pid.bandCol[i]);
         }
@@ -545,10 +546,12 @@ public class DashView extends SurfaceView implements SurfaceHolder.Callback {
     }
 
     private float nrm(PidDef pid, float v) {
+        if (Float.isNaN(v)) return 0f;
         return Math.max(0f, Math.min(1f, (v - pid.mn) / (pid.mx - pid.mn)));
     }
 
     private String fmtV(float v, int dec) {
+        if (Float.isNaN(v)) return "---";
         if (dec == 0) return String.valueOf(Math.round(v));
         return String.format("%." + dec + "f", v);
     }
@@ -632,8 +635,9 @@ public class DashView extends SurfaceView implements SurfaceHolder.Callback {
     private static final float AG_START = 135f, AG_SWEEP = 270f;
 
     private void drawArcGauge(Canvas c, Theme t, PidDef pid, float v) {
-        float nv = nrm(pid, v);
-        int col = bandColor(pid, v, t);
+        boolean noData = Float.isNaN(v);
+        float nv = noData ? 0f : nrm(pid, v);
+        int col = noData ? ac(t.label, 0.4f) : bandColor(pid, v, t);
         float r = AG_R;
         arcRect.set(AG_CX-r, AG_CY-r, AG_CX+r, AG_CY+r);
 
@@ -642,56 +646,61 @@ public class DashView extends SurfaceView implements SurfaceHolder.Callback {
         strokeP.setStrokeWidth(AG_TW); strokeP.setStrokeCap(Paint.Cap.BUTT);
         c.drawArc(arcRect, AG_START, AG_SWEEP, false, strokeP);
 
-        // Band tints
-        for (int i = 0; i < pid.bandLo.length; i++) {
-            float bl = Math.max(pid.mn, pid.bandLo[i]);
-            float bh = Math.min(pid.mx, pid.bandHi[i]);
-            if (bl >= bh) continue;
-            float a1 = AG_START + ((bl-pid.mn)/(pid.mx-pid.mn))*AG_SWEEP;
-            float sw = ((bh-bl)/(pid.mx-pid.mn))*AG_SWEEP;
-            strokeP.setColor(ac(themeColor(t, pid.bandCol[i]), 0.16f));
-            strokeP.setStrokeWidth(AG_TW);
-            c.drawArc(arcRect, a1, sw, false, strokeP);
+        // Band tints (skip when no data so gauge looks clearly inactive)
+        if (!noData) {
+            for (int i = 0; i < pid.bandLo.length; i++) {
+                float bl = Math.max(pid.mn, pid.bandLo[i]);
+                float bh = Math.min(pid.mx, pid.bandHi[i]);
+                if (bl >= bh) continue;
+                float a1 = AG_START + ((bl-pid.mn)/(pid.mx-pid.mn))*AG_SWEEP;
+                float sw = ((bh-bl)/(pid.mx-pid.mn))*AG_SWEEP;
+                strokeP.setColor(ac(themeColor(t, pid.bandCol[i]), 0.16f));
+                strokeP.setStrokeWidth(AG_TW);
+                c.drawArc(arcRect, a1, sw, false, strokeP);
+            }
+            // Value arc
+            if (nv > 0.005f) glowArc(c, arcRect, AG_START, nv*AG_SWEEP, col, AG_TW);
         }
-
-        // Value arc
-        if (nv > 0.005f) glowArc(c, arcRect, AG_START, nv*AG_SWEEP, col, AG_TW);
 
         // Ticks
         for (int i = 0; i <= 20; i++) {
             double a = Math.toRadians(AG_START + (i/20.0)*AG_SWEEP);
             boolean maj = (i%4==0);
             float r1 = r - AG_TW/2f - 1, r2 = r1 - (maj?7:3.5f);
-            strokeP.setColor(maj ? ac(t.label,0.7f) : ac(t.border,0.6f));
+            strokeP.setColor(maj ? ac(t.label, noData?0.3f:0.7f) : ac(t.border,0.6f));
             strokeP.setStrokeWidth(maj ? 1.2f : 0.6f);
             c.drawLine((float)(AG_CX+r1*Math.cos(a)), (float)(AG_CY+r1*Math.sin(a)),
                        (float)(AG_CX+r2*Math.cos(a)), (float)(AG_CY+r2*Math.sin(a)), strokeP);
         }
 
-        // End dot
-        double fillRad = Math.toRadians(AG_START + nv*AG_SWEEP);
-        glowDot(c, (float)(AG_CX+r*Math.cos(fillRad)), (float)(AG_CY+r*Math.sin(fillRad)), 5f, col);
+        if (!noData) {
+            // End dot
+            double fillRad = Math.toRadians(AG_START + nv*AG_SWEEP);
+            glowDot(c, (float)(AG_CX+r*Math.cos(fillRad)), (float)(AG_CY+r*Math.sin(fillRad)), 5f, col);
+        }
 
         // Min/Max labels
         double saRad = Math.toRadians(AG_START);
         double eaRad = Math.toRadians(AG_START + AG_SWEEP);
         sf(8, false, false);
-        textP.setColor(ac(t.label, 0.9f)); textP.setTextAlign(Paint.Align.RIGHT);
+        textP.setColor(ac(t.label, noData?0.3f:0.9f)); textP.setTextAlign(Paint.Align.RIGHT);
         c.drawText(fmtV(pid.mn,0), (float)(AG_CX+(r+15)*Math.cos(saRad)), (float)(AG_CY+(r+15)*Math.sin(saRad)), textP);
         textP.setTextAlign(Paint.Align.LEFT);
         c.drawText(fmtV(pid.mx,0), (float)(AG_CX+(r+15)*Math.cos(eaRad)), (float)(AG_CY+(r+15)*Math.sin(eaRad)), textP);
 
         // Centre value
-        String vs = fmtV(v, pid.dec);
+        String vs = noData ? "---" : fmtV(v, pid.dec);
         float fs = vs.length()<=3?50: vs.length()<=5?40: vs.length()<=7?32:26;
         sf(fs, true, true);
         textP.setTextAlign(Paint.Align.CENTER);
-        textShadow(c, vs, AG_CX, AG_CY+14, t.bg, t.white);
+        textShadow(c, vs, AG_CX, AG_CY+14, t.bg, noData ? ac(t.label, 0.5f) : t.white);
 
-        // Unit
-        sf(11, false, false);
-        textP.setColor(t.unit); textP.setAlpha(255); textP.setTextAlign(Paint.Align.CENTER);
-        c.drawText(pid.unit, AG_CX, AG_CY+31, textP);
+        // Unit (hide when no data)
+        if (!noData) {
+            sf(11, false, false);
+            textP.setColor(t.unit); textP.setAlpha(255); textP.setTextAlign(Paint.Align.CENTER);
+            c.drawText(pid.unit, AG_CX, AG_CY+31, textP);
+        }
     }
 
     // ── G-METER ───────────────────────────────────────────────────
@@ -855,29 +864,32 @@ public class DashView extends SurfaceView implements SurfaceHolder.Callback {
         for (int i=0; i<4 && i<pg.pids.length; i++) {
             float cx=CP[i][0],cy=CP[i][1],cw=CP[i][2],ch=CP[i][3];
             PidDef pid = pg.pids[i];
-            float v = i<pv.length ? pv[i] : 0;
-            float nv = nrm(pid, v);
-            int col = bandColor(pid, v, t);
+            float v = i<pv.length ? pv[i] : Float.NaN;
+            boolean noData = Float.isNaN(v);
+            float nv = noData ? 0f : nrm(pid, v);
+            int col = noData ? ac(t.label, 0.4f) : bandColor(pid, v, t);
             boolean isH = (i == pg.heroIdx);
             fillRect(c, cx,cy,cw,ch, t.panel, 1f);
-            fillRect(c, cx,cy,(int)(nv*cw),ch, col, isH?0.13f:0.08f);
+            if (!noData) fillRect(c, cx,cy,(int)(nv*cw),ch, col, isH?0.13f:0.08f);
             fillRect(c, cx,cy,3,ch, col, 1f);
-            if (isH) glowRect(c,cx,cy,cw,ch, col, 0.5f);
+            if (isH) glowRect(c,cx,cy,cw,ch, col, noData?0.2f:0.5f);
             else strokeRect(c,cx,cy,cw,ch, t.border, 0.4f, 1f);
             cbrk(c, cx,cy,cw,ch, ac(isH?col:t.accent, 0.25f), 5);
             sf(9,true,false); textP.setColor(t.white); textP.setAlpha(255); textP.setTextAlign(Paint.Align.LEFT);
             c.drawText(pid.lbl, cx+8, cy+17, textP);
-            String vs = fmtV(v, pid.dec);
+            String vs = noData ? "---" : fmtV(v, pid.dec);
             float fs = vs.length()<=3?30: vs.length()<=5?24: vs.length()<=7?20:15;
             sf(fs,true,true); textP.setTextAlign(Paint.Align.LEFT);
             textShadow(c, vs, cx+8, cy+60, t.bg, col);
-            float tw = textP.measureText(vs);
-            sf(10,false,false); textP.setColor(ac(col,230)); textP.setAlpha(230);
-            c.drawText(pid.unit, cx+8+tw+3, cy+56, textP);
+            if (!noData) {
+                float tw = textP.measureText(vs);
+                sf(10,false,false); textP.setColor(ac(col,230)); textP.setAlpha(230);
+                c.drawText(pid.unit, cx+8+tw+3, cy+56, textP);
+            }
             // Bar
             float bx=cx+8,by=cy+74,bw=cw-16,bh=6;
             fillRect(c,bx,by,bw,bh, t.bg, 1f);
-            fillRect(c,bx,by,(int)(nv*bw),bh, col, 1f);
+            if (!noData) fillRect(c,bx,by,(int)(nv*bw),bh, col, 1f);
             strokeRect(c,bx,by,bw,bh, t.border, 0.5f, 1f);
             sf(7,false,false); textP.setColor(ac(t.label,180));
             textP.setTextAlign(Paint.Align.LEFT); c.drawText(fmtV(pid.mn,0), bx, cy+90, textP);
@@ -966,12 +978,13 @@ public class DashView extends SurfaceView implements SurfaceHolder.Callback {
 
     private void drawStripItem(Canvas c, Theme t, float x, float y, float w, float h,
                                 PidDef pid, float v, String shortLbl, String unit) {
-        float nv  = nrm(pid, v);
-        int   col = bandColor(pid, v, t);
+        boolean noData = Float.isNaN(v);
+        float nv  = noData ? 0f : nrm(pid, v);
+        int   col = noData ? ac(t.label, 0.35f) : bandColor(pid, v, t);
         float cx  = x + w / 2f;
 
         // Subtle tinted fill
-        fillRect(c, (int)x, (int)y, (int)w, (int)h, col, 0.05f);
+        if (!noData) fillRect(c, (int)x, (int)y, (int)w, (int)h, col, 0.05f);
         // 2 px accent bar at top of slot
         fillRect(c, (int)x, (int)y, (int)w, 2, col, 0.55f);
 
@@ -981,22 +994,24 @@ public class DashView extends SurfaceView implements SurfaceHolder.Callback {
         c.drawText(shortLbl, cx, y + 12, textP);
 
         // Large value
-        String vs = fmtV(v, pid.dec);
+        String vs = noData ? "---" : fmtV(v, pid.dec);
         float fs = vs.length() <= 3 ? 18f : vs.length() <= 5 ? 15f : 12f;
         sf(fs, true, true);
         textP.setTextAlign(Paint.Align.CENTER);
         float valY = y + h * 0.58f;
         textShadow(c, vs, cx, valY, t.bg, col);
 
-        // Unit (6 pt mono)
-        sf(6, false, false);
-        textP.setColor(ac(col, 200)); textP.setAlpha(200); textP.setTextAlign(Paint.Align.CENTER);
-        c.drawText(unit, cx, valY + 11, textP);
+        // Unit (6 pt mono) — hide when no data
+        if (!noData) {
+            sf(6, false, false);
+            textP.setColor(ac(col, 200)); textP.setAlpha(200); textP.setTextAlign(Paint.Align.CENTER);
+            c.drawText(unit, cx, valY + 11, textP);
+        }
 
         // Mini bar (3 px) at bottom of slot
         float bx = x + 5, bw = w - 10, by = y + h - 10;
         fillRect(c, (int)bx, (int)by, (int)bw, 3, t.bg, 1f);
-        fillRect(c, (int)bx, (int)by, Math.max(2, (int)(nv * bw)), 3, col, 1f);
+        if (!noData) fillRect(c, (int)bx, (int)by, Math.max(2, (int)(nv * bw)), 3, col, 1f);
     }
 
     // ── TURBO COMPRESSOR WHEEL ────────────────────────────────────
@@ -1004,15 +1019,15 @@ public class DashView extends SurfaceView implements SurfaceHolder.Callback {
     private void drawTurboWheel(Canvas c, Theme t) {
         DashData d = DashData.get();
         float boost = d.boostPsi();
-        // Normalized: 0 at vacuum, 1 at 20 PSI
-        float nb = Math.max(0f, Math.min(1f, (boost + 2f) / 22f));
+        // Normalized: 0 at vacuum, 1 at 20 PSI; NaN (no data yet) treated as 0
+        float nb = Float.isNaN(boost) ? 0f : Math.max(0f, Math.min(1f, (boost + 2f) / 22f));
         // Turbo spins at ~15-20× engine speed; scale visually by RPM + boost
         float turboA = engAngle * (5f + nb * 9f);
         float cx = AG_CX, cy = AG_CY;
         int numBlades = 8;
         float outerR = 72f, innerR = 14f;
         int col = nb < 0.05f ? t.blue : nb < 0.4f ? t.cyan : nb < 0.75f ? t.green : t.yellow;
-        float bladeAlpha = 0.09f + nb * 0.22f;
+        float bladeAlpha = 0.28f + nb * 0.42f; // min 0.28 at idle, max 0.70 at full boost
 
         // Outer diffuser ring
         strokeP.setStyle(Paint.Style.STROKE); strokeP.setStrokeWidth(2f);
@@ -1084,7 +1099,8 @@ public class DashView extends SurfaceView implements SurfaceHolder.Callback {
         c.drawText("FA20", LW-49, blockTop+12, textP);
 
         // ── AVCS cam angle indicators (OCV duty → cam pos proxy) ──
-        float ocvL=(dd.ocvIntakeL+dd.ocvExhL)/2f/100f, ocvR=(dd.ocvIntakeR+dd.ocvExhR)/2f/100f;
+        float ocvL = (!Float.isNaN(dd.ocvIntakeL)&&!Float.isNaN(dd.ocvExhL)) ? (dd.ocvIntakeL+dd.ocvExhL)/2f/100f : 0f;
+        float ocvR = (!Float.isNaN(dd.ocvIntakeR)&&!Float.isNaN(dd.ocvExhR)) ? (dd.ocvIntakeR+dd.ocvExhR)/2f/100f : 0f;
         float camArcR=8f;
         for(int bank=0;bank<2;bank++){
             float bx = bank==0?26f:LW-26f;
@@ -1099,7 +1115,7 @@ public class DashView extends SurfaceView implements SurfaceHolder.Callback {
         }
 
         // ── Oil temp heat-map glow on block ───────────────────────
-        float oilN=Math.max(0,Math.min(1f,(dd.oilTempF()-100f)/150f)); // 0 at 100°F, 1 at 250°F
+        float oilN=Float.isNaN(dd.oilTempC)?0f:Math.max(0,Math.min(1f,(dd.oilTempF()-100f)/150f)); // 0 at 100°F, 1 at 250°F
         if(oilN>0.1f){
             int oilCol=oilN<0.5f?t.blue:oilN<0.8f?t.green:oilN<0.95f?t.yellow:t.red;
             fillRect(c, 8,blockTop,82,blockBot-blockTop, oilCol, oilN*0.06f);
@@ -1142,8 +1158,9 @@ public class DashView extends SurfaceView implements SurfaceHolder.Callback {
         int[] cpIdx = {0,1,1,0};
         for (int ci=0; ci<4; ci++) {
             float rv = roughVals[ci];
+            boolean rvNaN = Float.isNaN(rv);
             PidDef pid = PAGES[4].pids[ci];
-            int col = bandColor(pid, rv, t);
+            int col = rvNaN ? ac(t.label, 0.35f) : bandColor(pid, rv, t);
             float rY = rowY[ci][0];
             float pisPos = (1 - cos(engAngle + FA20_PHASE[ci])) / 2f;
             boolean isl = isLeft[ci];
@@ -1170,7 +1187,7 @@ public class DashView extends SurfaceView implements SurfaceHolder.Callback {
             }
 
             // Roughness glow overlay on bore
-            if (rv > 5f) fillRect(c, boreStartX, boreTop, boreLen, BORE, col, Math.min(0.25f, rv/200f));
+            if (!rvNaN && rv > 5f) fillRect(c, boreStartX, boreTop, boreLen, BORE, col, Math.min(0.25f, rv/200f));
 
             float phe = isl ? boreStartX+pisPos*STROKE : boreEndX-pisPos*STROKE-PISTH;
             // Piston rings highlight
@@ -1214,10 +1231,11 @@ public class DashView extends SurfaceView implements SurfaceHolder.Callback {
 
         // Live RPM + boost — pinned to screen edges to avoid overlap
         sf(7,true,true); textP.setColor(t.white); textP.setAlpha(255); textP.setTextAlign(Paint.Align.LEFT);
-        c.drawText(String.valueOf(Math.round(dd.rpm))+" RPM", 14, CY+70, textP);
-        int bCol=dd.boostPsi()<0?t.cyan:dd.boostPsi()<10?t.green:t.yellow;
+        c.drawText(Float.isNaN(dd.rpm) ? "--- RPM" : Math.round(dd.rpm)+" RPM", 14, CY+70, textP);
+        float ddBoost = dd.boostPsi();
+        int bCol = Float.isNaN(ddBoost) ? ac(t.label,128) : ddBoost<0?t.cyan:ddBoost<10?t.green:t.yellow;
         sf(7,true,true); textP.setColor(bCol); textP.setTextAlign(Paint.Align.RIGHT);
-        c.drawText((dd.boostPsi()>=0?"+":"")+String.format("%.1f",dd.boostPsi())+" PSI", LW-14, CY+70, textP);
+        c.drawText(Float.isNaN(ddBoost) ? "--- PSI" : (ddBoost>=0?"+":"")+String.format("%.1f",ddBoost)+" PSI", LW-14, CY+70, textP);
         // Firing order on its own centred line
         sf(7,false,false); textP.setColor(ac(t.white,0.55f)); textP.setTextAlign(Paint.Align.CENTER);
         c.drawText("FIRING ORDER  1-3-2-4", LW/2f, CY+86, textP);
@@ -1226,31 +1244,34 @@ public class DashView extends SurfaceView implements SurfaceHolder.Callback {
         float cW=78,cH=82,cY2=312;
         for (int i=0; i<4; i++) {
             float cx2=i*(cW+2)+2;
-            float rv=roughVals[i]; PidDef pid=PAGES[4].pids[i]; int col=bandColor(pid,rv,t);
-            float nv=nrm(pid,rv);
+            float rv=roughVals[i]; boolean rvNaN2=Float.isNaN(rv);
+            PidDef pid=PAGES[4].pids[i];
+            int col = rvNaN2 ? ac(t.label, 0.35f) : bandColor(pid,rv,t);
+            float nv = rvNaN2 ? 0f : nrm(pid,rv);
             fillRect(c,cx2,cY2,cW,cH, t.panel, 1f);
-            fillRect(c,cx2,cY2,(int)(nv*cW),cH, col, 0.08f);
+            if (!rvNaN2) fillRect(c,cx2,cY2,(int)(nv*cW),cH, col, 0.08f);
             fillRect(c,cx2,cY2,cW,3, col, 1f);
             strokeRect(c,cx2,cY2,cW,cH, t.border, 0.35f, 1f);
             cbrk(c,cx2,cY2,cW,cH, ac(t.accent,0.25f), 4);
             sf(8,true,false); textP.setColor(t.white); textP.setAlpha(255); textP.setTextAlign(Paint.Align.CENTER);
             c.drawText(new String[]{"CYL 1","CYL 2","CYL 3","CYL 4"}[i], cx2+cW/2f, cY2+15, textP);
             sf(22,true,true); textP.setTextAlign(Paint.Align.CENTER);
-            textShadow(c, String.format("%.1f",rv), cx2+cW/2f, cY2+44, t.bg, col);
+            String rvStr = rvNaN2 ? "---" : String.format("%.1f",rv);
+            textShadow(c, rvStr, cx2+cW/2f, cY2+44, t.bg, col);
             sf(7,false,false); textP.setColor(col); textP.setTextAlign(Paint.Align.CENTER);
-            c.drawText(rv<10?"OK":rv<30?"WATCH":"KNOCK", cx2+cW/2f, cY2+58, textP);
+            c.drawText(rvNaN2 ? "NO DATA" : rv<10?"OK":rv<30?"WATCH":"KNOCK", cx2+cW/2f, cY2+58, textP);
             // mini bar
             float bx=cx2+6, by=cY2+cH-14, bw=cW-12;
             fillRect(c,bx,by,bw,5, t.bg, 1f);
-            fillRect(c,bx,by,(int)(nv*bw),5, col, 1f);
+            if (!rvNaN2) fillRect(c,bx,by,(int)(nv*bw),5, col, 1f);
             strokeRect(c,bx,by,bw,5, t.border, 0.4f, 1f);
         }
         hline(c,t,396);
         // Status strip — RPM + Speed (ends at y=458 to leave room for dot strip at y=460)
         DashData ds=DashData.get();
         fillRect(c,0,396,LW,64, t.dim, 1f);
-        int[] scols2={bandColor(PAGES[0].pids[0],ds.rpm,t), bandColor(PAGES[6].pids[1],ds.speedMph(),t), ds.connected?t.green:t.orange};
-        String[] slbls2={"RPM","MPH","OBD"}; String[] svals2={String.valueOf(Math.round(ds.rpm)),String.valueOf(Math.round(ds.speedMph())),ds.btStatus};
+        int[] scols2={Float.isNaN(ds.rpm)?ac(t.label,0.35f):bandColor(PAGES[0].pids[0],ds.rpm,t), Float.isNaN(ds.speedMph())?ac(t.label,0.35f):bandColor(PAGES[6].pids[1],ds.speedMph(),t), ds.connected?t.green:t.orange};
+        String[] slbls2={"RPM","MPH","OBD"}; String[] svals2={Float.isNaN(ds.rpm)?"---":String.valueOf(Math.round(ds.rpm)),Float.isNaN(ds.speedMph())?"---":String.valueOf(Math.round(ds.speedMph())),ds.btStatus};
         for(int i=0;i<3;i++){
             int sx3=i*(LW/3);
             fillRect(c,sx3+(i>0?1:0),398,2,58, scols2[i], 1f);
@@ -1288,7 +1309,7 @@ public class DashView extends SurfaceView implements SurfaceHolder.Callback {
             cbrk(c, cx+2,cy+2,tW-4,tH-4, ac(col,0.28f), 4);
             sf(7,true,false); textP.setColor(ac(t.white,220)); textP.setTextAlign(Paint.Align.LEFT);
             c.drawText(pkLbls[i], cx+6, cy+20, textP);
-            boolean hasData = pkVals[i]!=0 && pkVals[i]!=-99f;
+            boolean hasData = !Float.isNaN(pkVals[i]);
             String dv = hasData ? fmtV(pkVals[i],pkDecs[i]) : "---";
             float vFs = dv.length()<=3?34: dv.length()<=5?26: 20;
             sf(vFs,true,true); textP.setTextAlign(Paint.Align.CENTER);
@@ -1317,49 +1338,55 @@ public class DashView extends SurfaceView implements SurfaceHolder.Callback {
         PidDef lodPid=PAGES[0].pids[1], oilPid=PAGES[1].pids[1];
         PidDef knkPid=PAGES[7].pids[1];  // index 1 = KNOCK CORR (was 3 before timing page reshuffle)
 
-        int bstCol=bandColor(bstPid,boost,t), lodCol=bandColor(lodPid,load,t);
-        int oilCol=bandColor(oilPid,oil,t);
-        boolean kActive=knock<-2.5f;
-        int knkCol=kActive?t.red:knock<-0.1f?t.orange:t.green;
+        int bstCol=Float.isNaN(boost)?ac(t.label,0.35f):bandColor(bstPid,boost,t);
+        int lodCol=Float.isNaN(load)?ac(t.label,0.35f):bandColor(lodPid,load,t);
+        int oilCol=Float.isNaN(oil)?ac(t.label,0.35f):bandColor(oilPid,oil,t);
+        boolean kActive=!Float.isNaN(knock)&&knock<-2.5f;
+        int knkCol=Float.isNaN(knock)?ac(t.label,0.35f):kActive?t.red:knock<-0.1f?t.orange:t.green;
 
-        float rpmN=nrm(rpmPid,rpm), bstN=nrm(bstPid,boost), tgtN=nrm(bstPid,tgtMap);
+        float rpmN=Float.isNaN(rpm)?0f:nrm(rpmPid,rpm);
+        float bstN=Float.isNaN(boost)?0f:nrm(bstPid,boost);
+        float tgtN=Float.isNaN(tgtMap)?0f:nrm(bstPid,tgtMap);
         long ms=System.currentTimeMillis(); float pulse=0.5f+0.5f*(float)Math.abs(Math.sin(ms*0.006));
         int heroH=195;
 
         fillRect(c, 0,0,LW,3, t.accent, 1f);
         sf(8,true,false); textP.setColor(t.label); textP.setAlpha(255); textP.setTextAlign(Paint.Align.CENTER);
         c.drawText("VEHICLE SPEED", LW/2f, 22, textP);
-        String ss = String.valueOf(Math.round(spd));
+        String ss = Float.isNaN(spd) ? "---" : String.valueOf(Math.round(spd));
         float sfs = ss.length()<=2?110: ss.length()==3?88:72;
         sf(sfs,true,true); textP.setTextAlign(Paint.Align.CENTER);
-        textShadow(c, ss, LW/2f, 132, t.bg, t.white);
+        textShadow(c, ss, LW/2f, 132, t.bg, Float.isNaN(spd)?ac(t.label,0.5f):t.white);
         sf(14,true,true); textP.setColor(t.accent); textP.setAlpha(255); c.drawText("MPH", LW/2f, 154, textP);
 
         // RPM bar
-        int rpmCol=bandColor(rpmPid,rpm,t);
+        int rpmCol=Float.isNaN(rpm)?ac(t.label,0.35f):bandColor(rpmPid,rpm,t);
         fillRect(c, 14,170,LW-28,10, t.dim, 1f);
-        fillRect(c, 14,170,(int)(rpmN*(LW-28)),10, rpmCol, 1f);
+        if (!Float.isNaN(rpm)) fillRect(c, 14,170,(int)(rpmN*(LW-28)),10, rpmCol, 1f);
         strokeRect(c, 14,170,LW-28,10, t.border, 0.5f, 1f);
         sf(7,true,false); textP.setColor(t.label); textP.setTextAlign(Paint.Align.LEFT); c.drawText("RPM",14,168,textP);
-        textP.setColor(rpmCol); textP.setTextAlign(Paint.Align.RIGHT); c.drawText(String.valueOf(Math.round(rpm)),LW-14,168,textP);
+        textP.setColor(rpmCol); textP.setTextAlign(Paint.Align.RIGHT);
+        c.drawText(Float.isNaN(rpm)?"---":String.valueOf(Math.round(rpm)),LW-14,168,textP);
 
         hline(c,t,heroH);
         fillRect(c, 0,heroH,LW,65, t.panel, 1f);
         fillRect(c, 0,heroH,LW,2, t.accent, 1f);
         sf(8,true,false); textP.setColor(t.label); textP.setTextAlign(Paint.Align.LEFT); c.drawText("BOOST",14,heroH+16,textP);
-        String bstStr=(boost>=0?"+":"")+String.format("%.1f",boost)+"PSI";
+        String bstStr=Float.isNaN(boost)?"---":((boost>=0?"+":"")+String.format("%.1f",boost)+"PSI");
         sf(12,true,true); textP.setColor(bstCol); textP.setTextAlign(Paint.Align.LEFT);
         textShadow(c, bstStr, 58, heroH+16, t.bg, bstCol);
         sf(7,false,false); textP.setColor(ac(t.label,165)); textP.setTextAlign(Paint.Align.RIGHT);
-        c.drawText("TGT "+String.format("%.1f",tgtMap)+" PSI", LW-14, heroH+16, textP);
+        c.drawText(Float.isNaN(tgtMap)?"TGT --- PSI":"TGT "+String.format("%.1f",tgtMap)+" PSI", LW-14, heroH+16, textP);
 
         int bbX=14,bbY=heroH+24,bbW=LW-28,bbH=20;
         fillRect(c, bbX,bbY,bbW,bbH, t.bg, 1f);
-        fillRect(c, bbX,bbY,Math.max(2,(int)(bstN*bbW)),bbH, bstCol, 1f);
+        if (!Float.isNaN(boost)) fillRect(c, bbX,bbY,Math.max(2,(int)(bstN*bbW)),bbH, bstCol, 1f);
         // Target dashes
-        int tgtX=bbX+(int)(tgtN*bbW);
-        fillP.setColor(ac(t.white,115)); fillP.setStyle(Paint.Style.FILL);
-        for(int dy=bbY-3;dy<bbY+bbH+3;dy+=5) c.drawRect(tgtX,dy,tgtX+1,dy+3,fillP);
+        if (!Float.isNaN(tgtMap)) {
+            int tgtX=bbX+(int)(tgtN*bbW);
+            fillP.setColor(ac(t.white,115)); fillP.setStyle(Paint.Style.FILL);
+            for(int dy=bbY-3;dy<bbY+bbH+3;dy+=5) c.drawRect(tgtX,dy,tgtX+1,dy+3,fillP);
+        }
         strokeRect(c, bbX,bbY,bbW,bbH, t.border, 0.45f, 1f);
         hline(c,t,heroH+65);
 
@@ -1370,11 +1397,11 @@ public class DashView extends SurfaceView implements SurfaceHolder.Callback {
         String[]tLbls={"BOOST","LOAD","OIL","KNOCK"};
         String[]tUnits={"PSI","%","°F","°"};
         PidDef[]tPids={bstPid,lodPid,oilPid,knkPid};
-        String[]tDisps={(boost>=0?"+":"")+String.format("%.1f",boost),String.valueOf(Math.round(load)),String.valueOf(Math.round(oil)),String.format("%.2f",knock)};
+        String[]tDisps={Float.isNaN(boost)?"---":(boost>=0?"+":"")+String.format("%.1f",boost),Float.isNaN(load)?"---":String.valueOf(Math.round(load)),Float.isNaN(oil)?"---":String.valueOf(Math.round(oil)),Float.isNaN(knock)?"---":String.format("%.2f",knock)};
         for (int i=0;i<4;i++) {
             int tx=i*tW3, ty=tileY;
             int col=tCols[i]; boolean isK=i==3;
-            float nv2=nrm(tPids[i],tVals[i]);
+            float nv2=Float.isNaN(tVals[i])?0f:nrm(tPids[i],tVals[i]);
             fillRect(c, tx,ty,tW3,tileH, t.panel, 1f);
             if(i>0) fillRect(c, tx,ty,1,tileH, t.border, 0.22f);
             fillRect(c, tx,ty,tW3,3, isK&&kActive?t.red:col, 1f);
