@@ -9,7 +9,7 @@ Uses ELM327 AT commands + Subaru Mode 22 (UDS service 0x22) PIDs for manufacture
 | File | Role |
 |------|------|
 | `OBDManager.java` | BT connect, ELM327 poll loop, all PID sends & parsers (~1000 lines) |
-| `DashView.java` | SurfaceView rendering, all 11 pages, page definitions (~1560 lines) |
+| `DashView.java` | SurfaceView rendering, all 7 pages, page definitions (~1560 lines) |
 | `DashData.java` | Shared volatile data store — all fields, derived getters (~170 lines) |
 | `MainActivity.java` | Permissions, button handling, lifecycle (~240 lines) |
 
@@ -23,10 +23,9 @@ Uses ELM327 AT commands + Subaru Mode 22 (UDS service 0x22) PIDs for manufacture
 | Tier | Freq | Header | PIDs |
 |------|------|--------|------|
 | 1 (burst) | ~10–20 Hz | 7E0/7E8 | RPM, speed, MAP, throttle, MAF, timing, coolant, boost |
-| 2 | ~3–5 Hz | 7E0/7E8 | Knock corr, wastegate, IAT, target boost, fine knock |
-| 3a | ~1 Hz | 7E0/7E8 | CVT temp, target MAP, batt temp; roughness (page 4 only); OCV (page 9 only); turbo detail (page 2 only); fuel stats (page 5 only) |
-| 3b | ~1 Hz | 7E1/7E9 | TCU: lockup, transfer, turbine RPM, primary/secondary RPM, gear ratios, TC slip (CVT page 3 only) |
-| 3c | ~1 Hz | 7E0/7E8 | Injector, AFR, HPFP, CPC, OSV, fuel tank press, DAM |
+| 2 | ~3–5 Hz | 7E0/7E8 | Knock corr, wastegate, IAT, fine knock |
+| 3a | ~1 Hz | 7E0/7E8 | CVT temp, target MAP, batt temp; roughness (page 3 only) |
+| 3d | ~1 Hz | 7E0/7E8 | DAM |
 
 **Header switching is expensive** — minimize `setHeader()` calls in the hot path.
 
@@ -65,19 +64,15 @@ Source: ScanGauge Outback CVT XGauge page.
 - `221151/221152/221150` for CVT shaft speeds/ratio — these are spec PIDs that don't respond on this TCU; use `22300E/2230D0/2230DA`.
 - `221017` for CVT temp from TCU — returns 7F2231 (error) on this vehicle; use `221021` on ECM.
 
-## Pages (DashView.java — `PAGES[]` array, index 0–10)
+## Pages (DashView.java — `PAGES[]` array, index 0–6)
 ```
-0  ENGINE     arc      RPM (hero), load, throttle, timing
+0  ENGINE     arc      RPM (hero), load, pedal, timing
 1  TEMPS      arc      coolant, oil, CVT temp, cat
-2  BOOST      arc      boost psi (hero), turbo speed, wastegate, target boost
-3  CVT        arc      gear ratio act (hero), CVT temp, lockup%, slip%
-4  ROUGHNESS  cylinder rough1–4 + FA20DIT boxer diagram
-5  FUEL       arc      AFR lambda, inj duty, STFT, LTFT
-6  G-FORCE    gforce   longitudinal G dot plot
-7  TIMING     arc      ignition advance, knock corr, fine knock, DAM
-8  IGNITION   arc      battery V, baro, battery temp
-9  CAM/VVT    arc      OCV intake L/R, OCV exh L/R
-10 SESSION    session  peak values + knock event count
+2  BOOST      arc      boost psi (hero), wastegate  ← 2-tile layout
+3  ROUGHNESS  cylinder rough1–4 + FA20DIT boxer diagram
+4  G-FORCE    gforce   longitudinal G dot plot
+5  TIMING     arc      ignition advance, knock corr, fine knock, DAM
+6  SESSION    session  peak values + knock event count
 ```
 
 ## DashView Rendering

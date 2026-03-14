@@ -261,7 +261,7 @@ public class OBDManager {
             // ════════════════════════════════════════════════════
             // TIER 2 — MEDIUM: every 3rd loop (~7Hz)
             // MAP, MAF, timing, throttle, pedal, fuel trims (Mode 01).
-            // Knock, wastegate, IAT, target boost, fine knock (Mode 22).
+            // Knock, wastegate, IAT, fine knock (Mode 22).
             // ════════════════════════════════════════════════════
             if (loopCount % 3 == 0) {
                 // Mode 01 — engine vitals
@@ -281,16 +281,12 @@ public class OBDManager {
                 parseKnockCorr(sendCmdTimeout("223018", CMD_TIMEOUT_SLOW));      // was 2210AF (spec §7) — reverted; 223018 confirmed working
                 parseWastegate(sendCmdTimeout("2210A8", CMD_TIMEOUT_SLOW));
                 parseIAT(sendCmdTimeout("22101F", CMD_TIMEOUT_SLOW));
-                parseTargetBoost(sendCmdTimeout("2210A7", CMD_TIMEOUT_SLOW));
                 parseFineKnock(sendCmdTimeout("2210B0", CMD_TIMEOUT_SLOW));
             }
 
             // ════════════════════════════════════════════════════
-            // TIER 3 — SLOW: every 10th loop (~1Hz)
-            // Temps, AVCS, TCU, accessories
-            // ════════════════════════════════════════════════════
-            // ════════════════════════════════════════════════════
             // TIER 3a — ECU slow: every 10th loop (~1Hz)
+            // Temps, accessories, roughness (page-gated)
             // ════════════════════════════════════════════════════
             if (loopCount % 10 == 0) {
                 int ap = data.activePage;
@@ -310,39 +306,14 @@ public class OBDManager {
                 parseCVTTemp(sendCmdTimeout("221021", CMD_TIMEOUT_SLOW));        // ECM, not TCU — confirmed via terminal
                 parseTargetMAP(sendCmdTimeout("223050", CMD_TIMEOUT_SLOW));
                 parseBattTemp(sendCmdTimeout("22309A", CMD_TIMEOUT_SLOW));
-                // Roughness only needed on ROUGHNESS page (4)
+                // Roughness only needed on ROUGHNESS page (3)
                 // PIDs confirmed by ScanGauge RM1-RM4 for FA20DIT WRX (firmware 4.22+)
                 // 2230xx range needs extra timeout — ECU response latency slightly higher
-                if (ap == 4) {
+                if (ap == 3) {
                     parseRoughness(sendCmdTimeout("223062", CMD_TIMEOUT_ROUGH), 1);
                     parseRoughness(sendCmdTimeout("223048", CMD_TIMEOUT_ROUGH), 2);
                     parseRoughness(sendCmdTimeout("223068", CMD_TIMEOUT_ROUGH), 3);
                     parseRoughness(sendCmdTimeout("22304A", CMD_TIMEOUT_ROUGH), 4);
-                }
-                // Turbo detail only needed on BOOST/TURBO page (2)
-                if (ap == 2) {
-                    parseTurboSpeed(sendCmdTimeout("2210A9", CMD_TIMEOUT_SLOW));
-                    parseChargeAirTemp(sendCmdTimeout("2210AA", CMD_TIMEOUT_SLOW));
-                }
-            }
-
-            // ════════════════════════════════════════════════════
-            // TIER 3b — TCU slow: every 10th loop, offset by 5
-            // Always poll CVT temp (shown on TEMPS page); gate detail behind CVT page (3)
-            // ════════════════════════════════════════════════════
-            if (loopCount % 10 == 5 && data.activePage == 3) {
-                setHeaderForce("7E1", "7E9");  // force re-send every time: ELM clones may silently drop ATCRA7E9
-                {
-                    parseLockup(sendCmdTimeout("221045", CMD_TIMEOUT_SLOW));
-                    parseTransfer(sendCmdTimeout("221065", CMD_TIMEOUT_SLOW));
-                    parseTurbineRpm(sendCmdTimeout("221067", CMD_TIMEOUT_SLOW));
-                    parsePrimaryRpm(sendCmdTimeout("22300E", CMD_TIMEOUT_SLOW));     // confirmed; used for cvtSlipPct()
-                    parseSecondaryRpm(sendCmdTimeout("2230D0", CMD_TIMEOUT_SLOW));
-                    parseGearRatioAct(sendCmdTimeout("2230DA", CMD_TIMEOUT_SLOW));
-                    parseGearRatioTgt(sendCmdTimeout("2230F8", CMD_TIMEOUT_SLOW));
-                    parsePriPulley(sendCmdTimeout("2210D2", CMD_TIMEOUT_SLOW));
-                    setHeader("7E0", "7E8");
-                    parseCvtMode(sendCmdTimeout("221299", CMD_TIMEOUT_SLOW));
                 }
             }
 
@@ -668,13 +639,6 @@ public class OBDManager {
         if (v > -41f && v < 200f) data.iatC = v;
     }
 
-    private void parseTargetBoost(String r) {
-        // 2210A7 — target boost pressure psi (spec §6). TODO: verify formula on car.
-        if (isError(r)) return;
-        int a = m22byte(r, 0); if (a < 0) return;
-        data.targetBoostPsi = a / 10f - 14.7f;
-    }
-
     private void parseFineKnock(String r) {
         // 2210B0 — fine knock learning degrees (spec §7)
         if (isError(r)) return;
@@ -741,22 +705,7 @@ public class OBDManager {
         data.fuelPumpPct = a / 255f * 100f;
     }
 
-    private void parseTurboSpeed(String r) {
-        // 2210A9 — turbo speed estimate rpm (spec §6). TODO: verify formula on car.
-        if (isError(r)) return;
-        int v = m22word(r); if (v < 0) return;
-        data.turboSpeedRpm = v * 10f;  // 10 RPM per count (common encoding)
-    }
-
-    private void parseChargeAirTemp(String r) {
-        // 2210AA — charge air / intercooler outlet temperature °C (spec §6)
-        if (isError(r)) return;
-        int a = m22byte(r, 0); if (a < 0) return;
-        float v = a - 40f;
-        if (v > -41f && v < 200f) data.chargeAirTempC = v;
-    }
-
-    // ── Mode 22 TCU parsers ────────────────────────────────────────
+    // ── Mode 22 ECM — CVT fluid temp (on ECU 7E0, not TCU) ──────────────────────────
 
     private void parseCVTTemp(String r) {
         // 221021 — CVT fluid temperature °C — lives on ECM (7E0/7E8), not TCU
@@ -765,72 +714,6 @@ public class OBDManager {
         int a = m22byte(r, 0); if (a < 0) return;
         float v = a - 40f;
         if (v > -41f && v < 250f) data.cvtTempC = v;
-    }
-
-    private void parseLockup(String r) {
-        // MTH 000100020000 = raw / 2 (%)
-        if (isError(r)) return;
-        int a = m22byte(r, 0); if (a < 0) return;
-        data.lockupPct = a / 2f;
-    }
-
-    private void parseTransfer(String r) {
-        // MTH 000100020000 = raw / 2 (%)
-        if (isError(r)) return;
-        int a = m22byte(r, 0); if (a < 0) return;
-        data.transferPct = a / 2f;
-    }
-
-    private void parseTurbineRpm(String r) {
-        // MTH 002000010000 = raw * 32 (RPM)
-        if (isError(r)) return;
-        int a = m22byte(r, 0); if (a < 0) return;
-        data.turbineRpm = a * 32f;
-    }
-
-    private void parsePrimaryRpm(String r) {
-        // MTH 000100010000 = raw word directly (RPM)
-        if (isError(r)) return;
-        int v = m22word(r); if (v < 0) return;
-        data.primaryRpm = v;
-    }
-
-    private void parseSecondaryRpm(String r) {
-        // MTH 000100010000 = raw word directly (RPM)
-        if (isError(r)) return;
-        int v = m22word(r); if (v < 0) return;
-        data.secondaryRpm = v;
-    }
-
-    private void parseGearRatioAct(String r) {
-        // 2230DA — CVT ratio actual (ScanGauge confirmed for Subaru CVT; was spec §9 221150).
-        // Word assumed to encode ratio * 1000 (e.g. 2500 = 2.500). TODO: verify on car.
-        if (isError(r)) return;
-        int v = m22word(r); if (v < 0) return;
-        data.gearRatioAct = v / 1000f;
-    }
-
-    private void parseGearRatioTgt(String r) {
-        // 2230F8 — CVT ratio target (no spec equivalent; keep for compatibility)
-        if (isError(r)) return;
-        int v = m22word(r); if (v < 0) return;
-        data.gearRatioTgt = v * 100f / 255f;
-    }
-
-    private void parsePriPulley(String r) {
-        // 2210D2 from TCU (7E1/7E9) — confirmed in CarScanner log, value 0x75=117
-        // Likely primary pulley pressure; raw * 6.9 ≈ kPa, or raw as-is (psi-adjacent)
-        if (isError(r)) return;
-        int a = m22byte(r, 0); if (a < 0) return;
-        data.priPulleyRaw = a;
-    }
-
-    private void parseCvtMode(String r) {
-        // 221299 from ECM (7E0/7E8) — confirmed in CarScanner log, value 0x04
-        // Likely CVT selector position / range indicator (raw byte 0-255)
-        if (isError(r)) return;
-        int a = m22byte(r, 0); if (a < 0) return;
-        data.cvtModeRaw = a;
     }
 
     // ── Mode 22 ECU — ScanGauge extended parsers ──────────────────

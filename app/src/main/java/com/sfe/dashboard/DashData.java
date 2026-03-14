@@ -50,9 +50,6 @@ public class DashData {
     public volatile float rough4        = Float.NaN;
     public volatile float boostPsiDirect = Float.NaN; // 2210A6 — direct boost pressure (psi)
     public volatile float wastegatePct  = Float.NaN; // 2210A8 — wastegate duty (%)
-    public volatile float targetBoostPsi = Float.NaN; // 2210A7 — target boost pressure (psi)
-    public volatile float turboSpeedRpm = Float.NaN; // 2210A9 — turbo speed estimate (rpm)
-    public volatile float chargeAirTempC = Float.NaN; // 2210AA — charge air / intercooler temp (°C)
     public volatile float ocvIntakeL    = Float.NaN; // 2210BB — OCV intake left (% duty)
     public volatile float ocvIntakeR    = Float.NaN; // 22109B
     public volatile float ocvExhL       = Float.NaN; // 2210EF
@@ -79,18 +76,8 @@ public class DashData {
     public volatile float damRatio         = Float.NaN; // 2210B1 — dynamic advance multiplier (ratio)
     public volatile float fuelLevelPct     = Float.NaN; // 012F   — fuel level (%)
 
-    // ── MODE 22 TCU (AT SH 7E1) ──────────────────────────────────
+    // ── CVT fluid temp (on ECM 7E0, not TCU) ─────────────────────
     public volatile float cvtTempC      = Float.NaN; // 221021 — CVT fluid temperature (°C)
-    public volatile float lockupPct     = Float.NaN; // 221045
-    public volatile float transferPct   = Float.NaN; // 221065
-    public volatile float turbineRpm    = Float.NaN; // 221067
-    public volatile float primaryRpm    = Float.NaN; // 22300E — primary pulley speed (rpm)
-    public volatile float secondaryRpm  = Float.NaN; // 2230D0 — secondary pulley speed (rpm)
-    public volatile float gearRatioAct  = Float.NaN; // 2230DA — CVT ratio actual
-    public volatile float gearRatioTgt  = Float.NaN; // 2230F8 — CVT ratio target
-    // From CarScanner log PIDs
-    public volatile int   priPulleyRaw  = 0;  // 2210D2 from TCU — primary pulley (raw)
-    public volatile int   cvtModeRaw    = 0;  // 221299 from ECM — CVT mode/range (raw)
 
     // ── Derived (computed in getter, not polled) ─────────────────
     public float speedMph()     { return speedKph * 0.621371f; }
@@ -112,18 +99,9 @@ public class DashData {
     }
 
     public float iatF()  { return iatC * 9f/5f + 32f; }
-    public float chargeAirTempF() { return chargeAirTempC * 9f/5f + 32f; }
 
     /** Throttle motor duty centred at 0 (range -100 to +100 %) */
     public float throttleMotorCentred() { return throttleMotorPct; }
-
-    /** CVT torque-converter slip derived from engine RPM vs primary pulley RPM.
-     *  When TC is locked primaryRpm ≈ rpm → slip ≈ 0%.
-     *  Returns NaN until both values have been received. */
-    public float cvtSlipPct() {
-        if (Float.isNaN(rpm) || Float.isNaN(primaryRpm) || rpm < 200f) return Float.NaN;
-        return Math.max(0f, (rpm - primaryRpm) / rpm * 100f);
-    }
 
     /** Estimated HP: (MAF * 14.7 * BSFC) very rough proxy */
     public float estHp() {
