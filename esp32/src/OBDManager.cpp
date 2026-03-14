@@ -1,0 +1,521 @@
+#include "OBDManager.h"
+
+// ── PIN pairing support ───────────────────────────────────────────────────────
+// The Veepeak uses PIN "1234". On first connection the ESP32 must pair.
+// We register a GAP callback so the ESP32 responds to SSP/legacy PIN requests
+// automatically rather than needing user interaction.
+#include <esp_bt_main.h>
+#include <esp_gap_bt_api.h>
+
+static void btGapCallback(esp_bt_gap_cb_event_t event, esp_bt_gap_cb_param_t* param) {
+    if (event == ESP_BT_GAP_AUTH_CMPL_EVT) {
+        if (param->auth_cmpl.stat == ESP_BT_STATUS_SUCCESS) {
+            Serial.printf("[BT] Paired with %s\n", param->auth_cmpl.device_name);
+        } else {
+            Serial.printf("[BT] Pairing failed, status=%d\n", param->auth_cmpl.stat);
+        }
+    } else if (event == ESP_BT_GAP_PIN_REQ_EVT) {
+        // Legacy PIN pairing — respond with "1234"
+        esp_bt_pin_code_t pin = {'1','2','3','4'};
+        esp_bt_gap_pin_reply(param->pin_req.bda, true, 4, pin);
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────────
+
+OBDManager::OBDManager(DashData& data) : _data(data) {}
+
+void OBDManager::start() {
+    if (_running) return;
+    _running = true;
+    xTaskCreatePinnedToCore(taskEntry, "OBD-Poll", 8192, this, 1, nullptr, 1);
+}
+
+void OBDManager::stop() {
+    _running = false;
+    _bt.disconnect();
+}
+
+void OBDManager::taskEntry(void* pv) {
+    static_cast<OBDManager*>(pv)->connectionLoop();
+    vTaskDelete(nullptr);
+}
+
+// ── Connection loop ───────────────────────────────────────────────────────────
+
+void OBDManager::connectionLoop() {
+    // Register GAP callback for PIN pairing before starting BT.
+    esp_bt_gap_register_callback(btGapCallback);
+
+    while (_running) {
+        snprintf((char*)_data.btStatus, sizeof(_data.btStatus), "SEARCHING");
+        _data.connected = false;
+
+        // Start BT stack in master mode.
+        if (_bt.isReady()) _bt.end();
+        _bt.begin("SFEDash", /*isMaster=*/true);
+
+        Serial.println("[OBD] Connecting to " BT_DEVICE_NAME "...");
+        snprintf((char*)_data.btStatus, sizeof(_data.btStatus), "CONNECTING");
+
+        bool ok = _bt.connect(BT_DEVICE_NAME);
+        if (!ok) {
+            Serial.println("[OBD] BT connect failed");
+            snprintf((char*)_data.btStatus, sizeof(_data.btStatus), "NOT FOUND");
+            _bt.end();
+            sleepMs(CONNECT_RETRY_MS);
+            continue;
+        }
+
+        Serial.println("[OBD] BT connected, initialising ELM327...");
+        snprintf((char*)_data.btStatus, sizeof(_data.btStatus), "INIT ELM327");
+
+        // Flush any stale bytes
+        while (_bt.available()) _bt.read();
+
+        bool initOk = true;
+        String proto;
+        try {
+            initELM327();
+            proto = sendCmd("ATDPN");
+            proto.trim();
+        } catch (...) {
+            initOk = false;
+        }
+
+        if (!initOk || proto.length() == 0) {
+            Serial.println("[OBD] ELM327 init failed");
+            snprintf((char*)_data.btStatus, sizeof(_data.btStatus), "INIT FAIL");
+            _bt.disconnect();
+            sleepMs(CONNECT_RETRY_MS);
+            continue;
+        }
+
+        proto.toCharArray((char*)_data.obdProtocol, sizeof(_data.obdProtocol));
+        snprintf((char*)_data.btStatus, sizeof(_data.btStatus), "CONNECTED");
+        _data.connected = true;
+        Serial.printf("[OBD] Connected, protocol: %s\n", _data.obdProtocol);
+
+        pollLoop();
+
+        _data.connected = false;
+        snprintf((char*)_data.btStatus, sizeof(_data.btStatus), "RECONNECTING");
+        _bt.disconnect();
+        sleepMs(CONNECT_RETRY_MS);
+    }
+}
+
+// ── ELM327 initialisation ──────────────────────────────────────────────────
+
+void OBDManager::initELM327() {
+    sleepMs(500);
+    sendRaw("ATZ\r");
+    sleepMs(1500);
+    // Drain ATZ response
+    readUntilPrompt(3000);
+
+    sendCmd("ATE0");    // echo off
+    sendCmd("ATL0");    // linefeeds off
+    sendCmd("ATH0");    // headers off
+    sendCmd("ATS0");    // spaces off
+    sendCmd("ATSP0");   // auto protocol
+    sendCmd("ATST0A");  // 40ms ELM timeout
+    sendCmd("ATAT2");   // adaptive timing mode 2
+    sendCmd("ATAL");    // allow long messages
+    sendCmd("ATCRA7E8"); // default CAN filter: ECU
+
+    String r = sendCmd("0100");
+    if (r.indexOf("UNABLE") >= 0 || r.indexOf("ERROR") >= 0 || r.length() == 0) {
+        Serial.println("[OBD] 0100 ping failed: " + r);
+        // Don't throw — some ELM clones need a second attempt; pollLoop will catch errors.
+    }
+}
+
+// ── Main poll loop ─────────────────────────────────────────────────────────
+
+void OBDManager::pollLoop() {
+    int  loopCount = 0;
+    int  hzCount   = 0;
+    unsigned long lastHz = millis();
+
+    // Reset header cache — ATZ wipes ELM327 state, force re-send.
+    _currentHeader[0] = '\0';
+    _currentCRA[0]    = '\0';
+
+    while (_running && _bt.connected()) {
+        unsigned long t0 = millis();
+
+        // ── TIER 1: every loop (~20 Hz) — RPM + speed ─────────────────────
+        setHeader("7DF", "7E8");
+        parseRPM(sendCmd("010C"));
+        parseSpeed(sendCmd("010D"));
+
+        // ── TIER 2: every 3rd loop (~7 Hz) ───────────────────────────────
+        if (loopCount % 3 == 0) {
+            setHeader("7DF", "7E8");
+            parseMAP(sendCmd("010B"));
+            parseTiming(sendCmd("010E"));
+            parseMAF(sendCmd("0110"));
+            parsePedal(sendCmd("0145"));
+            parseLoad(sendCmd("0104"));
+            parseSTFT(sendCmd("0106"));
+            parseLTFT(sendCmd("0107"));
+
+            setHeader("7E0", "7E8");
+            parseThrottleAngle(sendCmdTimeout("221022", CMD_TIMEOUT_SLOW));
+            parseBoostDirect(sendCmdTimeout("2210A6", CMD_TIMEOUT_SLOW));
+            parseKnockCorr(sendCmdTimeout("223018", CMD_TIMEOUT_SLOW));
+            parseWastegate(sendCmdTimeout("2210A8", CMD_TIMEOUT_SLOW));
+            parseIAT(sendCmdTimeout("22101F", CMD_TIMEOUT_SLOW));
+            parseFineKnock(sendCmdTimeout("2210B0", CMD_TIMEOUT_SLOW));
+        }
+
+        // ── TIER 3a: every 10th loop (~1 Hz) — slow/temps ─────────────────
+        if (loopCount % 10 == 0) {
+            int ap = _data.activePage;
+
+            setHeader("7DF", "7E8");
+            parseCoolant(sendCmd("0105"));
+            parseOilTemp(sendCmd("015C"));
+            parseCatTemp(sendCmd("013C"));
+            parseBaro(sendCmd("0133"));
+            parseFuelLevel(sendCmd("012F"));
+            parseBattery(sendCmd("ATRV"));
+
+            // Force ATSH+ATCRA re-send: cheap ELM clones may silently drop ATCRA
+            // when ATSH changes, causing ECU responses to be missed.
+            setHeaderForce("7E0", "7E8");
+            parseCVTTemp(sendCmdTimeout("221021", CMD_TIMEOUT_SLOW));
+            parseTargetMAP(sendCmdTimeout("223050", CMD_TIMEOUT_SLOW));
+            parseBattTemp(sendCmdTimeout("22309A", CMD_TIMEOUT_SLOW));
+
+            // Roughness only on page 3
+            if (ap == 3) {
+                parseRoughness(sendCmdTimeout("223062", CMD_TIMEOUT_ROUGH), 1);
+                parseRoughness(sendCmdTimeout("223048", CMD_TIMEOUT_ROUGH), 2);
+                parseRoughness(sendCmdTimeout("223068", CMD_TIMEOUT_ROUGH), 3);
+                parseRoughness(sendCmdTimeout("22304A", CMD_TIMEOUT_ROUGH), 4);
+            }
+        }
+
+        // ── TIER 3d: DAM — offset 7 in the 10-loop window ─────────────────
+        if (loopCount % 10 == 7) {
+            setHeader("7E0", "7E8");
+            parseDAM(sendCmdTimeout("2210B1", CMD_TIMEOUT_SLOW));
+        }
+
+        _data.updatePeaks();
+        _data.recordKnockEvent();
+
+        loopCount++;
+        unsigned long now = millis();
+        if (now - lastHz >= 1000) {
+            _data.pollHz = hzCount;
+            hzCount = 0;
+            lastHz  = now;
+        }
+        hzCount++;
+        _data.lastPollMs = millis() - t0;
+    }
+}
+
+// ── I/O ─────────────────────────────────────────────────────────────────────
+
+void OBDManager::sendRaw(const char* s) {
+    _bt.print(s);
+}
+
+String OBDManager::sendCmd(const char* cmd) {
+    _bt.printf("%s\r", cmd);
+    return readUntilPrompt(CMD_TIMEOUT_MS);
+}
+
+String OBDManager::sendCmdTimeout(const char* cmd, int timeoutMs) {
+    _bt.printf("%s\r", cmd);
+    return readUntilPrompt(timeoutMs);
+}
+
+void OBDManager::setHeader(const char* hdr, const char* cra) {
+    if (strcmp(hdr, _currentHeader) != 0) {
+        char buf[16]; snprintf(buf, sizeof(buf), "ATSH%s", hdr);
+        sendCmd(buf);
+        strncpy(_currentHeader, hdr, sizeof(_currentHeader) - 1);
+    }
+    if (strcmp(cra, _currentCRA) != 0) {
+        char buf[16]; snprintf(buf, sizeof(buf), "ATCRA%s", cra);
+        sendCmd(buf);
+        strncpy(_currentCRA, cra, sizeof(_currentCRA) - 1);
+    }
+}
+
+void OBDManager::setHeaderForce(const char* hdr, const char* cra) {
+    char buf[16];
+    snprintf(buf, sizeof(buf), "ATSH%s", hdr);
+    sendCmd(buf);
+    strncpy(_currentHeader, hdr, sizeof(_currentHeader) - 1);
+    snprintf(buf, sizeof(buf), "ATCRA%s", cra);
+    sendCmd(buf);
+    strncpy(_currentCRA, cra, sizeof(_currentCRA) - 1);
+}
+
+/** Read bytes until '>' prompt or timeout.  Returns uppercase, stripped of CR/LF. */
+String OBDManager::readUntilPrompt(int timeoutMs) {
+    String result;
+    result.reserve(64);
+    unsigned long deadline = millis() + timeoutMs;
+    while (millis() < deadline) {
+        while (_bt.available()) {
+            char ch = (char)_bt.read();
+            if (ch == '>') {
+                result.toUpperCase();
+                result.trim();
+                return result;
+            }
+            if (ch != '\r' && ch != '\n') result += ch;
+        }
+        vTaskDelay(pdMS_TO_TICKS(2));
+    }
+    result.toUpperCase();
+    result.trim();
+    return result;
+}
+
+// ── Response helpers ──────────────────────────────────────────────────────────
+
+String OBDManager::strip(const String& r) {
+    String s = r;
+    s.replace(" ", "");
+    return s;
+}
+
+bool OBDManager::isError(const String& r) {
+    if (r.length() == 0) return true;
+    return r.indexOf("NODATA") >= 0 || r.indexOf("NO DATA") >= 0
+        || r.indexOf("ERROR")  >= 0 || r.indexOf("UNABLE") >= 0
+        || r.indexOf("?")      >= 0 || r.indexOf("STOPPED") >= 0
+        || r.indexOf("BUSBUSY") >= 0
+        || r.indexOf("7F22") >= 0 || r.indexOf("7F21") >= 0;
+}
+
+int OBDManager::byteAt(const String& r, int pos) {
+    int idx = pos * 2;
+    if (idx + 2 > (int)r.length()) return -1;
+    String hex = r.substring(idx, idx + 2);
+    char* end;
+    long v = strtol(hex.c_str(), &end, 16);
+    return (end == hex.c_str()) ? -1 : (int)v;
+}
+
+int OBDManager::m22byte(const String& r, int dataByteIndex) {
+    String s = strip(r);
+    int idx = s.indexOf("62");
+    int base = (idx >= 0 && idx % 2 == 0) ? idx / 2 : 0;
+    return byteAt(s, base + 3 + dataByteIndex);
+}
+
+int OBDManager::m22word(const String& r) {
+    int a = m22byte(r, 0), b = m22byte(r, 1);
+    if (a < 0 || b < 0) return -1;
+    return a * 256 + b;
+}
+
+// ── Mode 01 parsers ───────────────────────────────────────────────────────────
+
+void OBDManager::parseRPM(const String& r) {
+    String s = strip(r);
+    if (isError(s) || s.length() < 8) return;
+    int a = byteAt(s, 2), b = byteAt(s, 3);
+    if (a < 0 || b < 0) return;
+    _data.rpm = (a * 256.0f + b) / 4.0f;
+}
+
+void OBDManager::parseSpeed(const String& r) {
+    String s = strip(r);
+    if (isError(s) || s.length() < 6) return;
+    int a = byteAt(s, 2); if (a < 0) return;
+    _data.speedKph = (float)a;
+}
+
+void OBDManager::parsePedal(const String& r) {
+    String s = strip(r);
+    if (isError(s) || s.length() < 6) return;
+    int a = byteAt(s, 2); if (a < 0) return;
+    _data.pedalPct = a / 255.0f * 100.0f;
+}
+
+void OBDManager::parseLoad(const String& r) {
+    String s = strip(r);
+    if (isError(s) || s.length() < 6) return;
+    int a = byteAt(s, 2); if (a < 0) return;
+    _data.loadPct = a / 255.0f * 100.0f;
+}
+
+void OBDManager::parseCoolant(const String& r) {
+    String s = strip(r);
+    if (isError(s) || s.length() < 6) return;
+    int a = byteAt(s, 2); if (a < 0) return;
+    _data.coolantC = a - 40.0f;
+}
+
+void OBDManager::parseTiming(const String& r) {
+    String s = strip(r);
+    if (isError(s) || s.length() < 6) return;
+    int a = byteAt(s, 2); if (a < 0) return;
+    _data.timingDeg = a / 2.0f - 64.0f;
+}
+
+void OBDManager::parseMAF(const String& r) {
+    String s = strip(r);
+    if (isError(s) || s.length() < 8) return;
+    int a = byteAt(s, 2), b = byteAt(s, 3);
+    if (a < 0 || b < 0) return;
+    _data.mafGs = (a * 256.0f + b) / 100.0f;
+}
+
+void OBDManager::parseMAP(const String& r) {
+    String s = strip(r);
+    if (isError(s) || s.length() < 6) return;
+    int a = byteAt(s, 2); if (a < 0) return;
+    _data.mapKpa = (float)a;
+}
+
+void OBDManager::parseBaro(const String& r) {
+    String s = strip(r);
+    if (isError(s) || s.length() < 6) return;
+    int a = byteAt(s, 2); if (a < 0) return;
+    if (a > 85 && a < 108) _data.baroKpa = (float)a;
+}
+
+void OBDManager::parseSTFT(const String& r) {
+    String s = strip(r);
+    if (isError(s) || s.length() < 6) return;
+    int a = byteAt(s, 2); if (a < 0) return;
+    _data.stftPct = (a - 128.0f) / 1.28f;
+}
+
+void OBDManager::parseLTFT(const String& r) {
+    String s = strip(r);
+    if (isError(s) || s.length() < 6) return;
+    int a = byteAt(s, 2); if (a < 0) return;
+    _data.ltftPct = (a - 128.0f) / 1.28f;
+}
+
+void OBDManager::parseCatTemp(const String& r) {
+    String s = strip(r);
+    if (isError(s) || s.length() < 8) return;
+    int a = byteAt(s, 2), b = byteAt(s, 3);
+    if (a < 0 || b < 0) return;
+    float v = (a * 256.0f + b) / 10.0f - 40.0f;
+    if (v > -41.0f && v < 2000.0f) _data.catTempC = v;
+}
+
+void OBDManager::parseOilTemp(const String& r) {
+    String s = strip(r);
+    if (isError(s) || s.length() < 6) return;
+    int a = byteAt(s, 2); if (a < 0) return;
+    float v = a - 40.0f;
+    if (v > -41.0f && v < 200.0f) _data.oilTempC = v;
+}
+
+void OBDManager::parseFuelLevel(const String& r) {
+    String s = strip(r);
+    if (isError(s) || s.length() < 6) return;
+    int a = byteAt(s, 2); if (a < 0) return;
+    _data.fuelLevelPct = a / 2.55f;
+}
+
+void OBDManager::parseBattery(const String& r) {
+    // ATRV returns e.g. "12.6V"
+    String s = r;
+    s.replace("V", "");
+    s.replace("v", "");
+    s.trim();
+    float v = s.toFloat();
+    if (v > 6.0f && v < 20.0f) _data.battV = v;
+}
+
+// ── Mode 22 parsers ───────────────────────────────────────────────────────────
+
+void OBDManager::parseThrottleAngle(const String& r) {
+    if (isError(r)) return;
+    int a = m22byte(r, 0); if (a < 0) return;
+    _data.throttlePct = a / 255.0f * 100.0f;
+}
+
+void OBDManager::parseBoostDirect(const String& r) {
+    // 2210A6 — direct boost pressure; formula unverified on car
+    if (isError(r)) return;
+    int a = m22byte(r, 0); if (a < 0) return;
+    _data.boostPsiDirect = a / 10.0f - 14.7f;
+}
+
+void OBDManager::parseKnockCorr(const String& r) {
+    // 223018 — feedback knock correction (ScanGauge KRC confirmed for FA20DIT WRX)
+    // Note: 2210AF = Engine Oil Temp (ScanGauge EOT), NOT knock — do not use
+    if (isError(r)) return;
+    int a = m22byte(r, 0); if (a < 0) return;
+    _data.knockCorr = a / 4.0f - 32.0f;
+}
+
+void OBDManager::parseWastegate(const String& r) {
+    if (isError(r)) return;
+    int a = m22byte(r, 0); if (a < 0) return;
+    _data.wastegatePct = a / 2.55f;
+}
+
+void OBDManager::parseIAT(const String& r) {
+    if (isError(r)) return;
+    int a = m22byte(r, 0); if (a < 0) return;
+    float v = a - 40.0f;
+    if (v > -41.0f && v < 200.0f) _data.iatC = v;
+}
+
+void OBDManager::parseFineKnock(const String& r) {
+    if (isError(r)) return;
+    int a = m22byte(r, 0); if (a < 0) return;
+    _data.fineKnockDeg = a / 4.0f - 32.0f;
+}
+
+void OBDManager::parseTargetMAP(const String& r) {
+    if (isError(r)) return;
+    int a = m22byte(r, 0); if (a < 0) return;
+    _data.targetMapKpa = (float)a;
+}
+
+void OBDManager::parseBattTemp(const String& r) {
+    if (isError(r)) return;
+    int a = m22byte(r, 0); if (a < 0) return;
+    _data.battTempC = a - 40.0f;
+}
+
+void OBDManager::parseCVTTemp(const String& r) {
+    // 221021 on ECM (7E0) — confirmed working; 221017 returns 7F2231 (not supported)
+    if (isError(r)) return;
+    int a = m22byte(r, 0); if (a < 0) return;
+    float v = a - 40.0f;
+    if (v > -41.0f && v < 250.0f) _data.cvtTempC = v;
+}
+
+void OBDManager::parseDAM(const String& r) {
+    // 2210B1 — dynamic advance multiplier; formula unverified on car
+    if (isError(r)) return;
+    int a = m22byte(r, 0); if (a < 0) return;
+    _data.damRatio = a / 255.0f;
+}
+
+void OBDManager::parseRoughness(const String& r, int cyl) {
+    if (isError(r)) return;
+    int a = m22byte(r, 0); if (a < 0) return;
+    switch (cyl) {
+        case 1: _data.rough1 = (float)a; break;
+        case 2: _data.rough2 = (float)a; break;
+        case 3: _data.rough3 = (float)a; break;
+        case 4: _data.rough4 = (float)a; break;
+    }
+}
+
+// ── Utility ─────────────────────────────────────────────────────────────────
+
+void OBDManager::sleepMs(uint32_t ms) {
+    vTaskDelay(pdMS_TO_TICKS(ms));
+}
