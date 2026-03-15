@@ -1,5 +1,11 @@
 # SFEDash — Claude Code Context
 
+## ⚠ ESP32 Fork — FROZEN
+**Do not modify anything under `esp32/` until the Android (Java) version is stable.**
+The C++ port in `esp32/` is a snapshot taken from the Android codebase at fork time.
+All PID fixes, formula corrections, and logic changes must be made in the Android source
+first, then ported to the ESP32 fork in a dedicated pass.
+
 ## Project Summary
 Android OBD-II dashboard app for a **2015+ Subaru WRX (FA20DIT engine, CVT)**.
 Connects via Bluetooth Classic SPP to a **Veepeak OBDII adapter** (device name: "OBDII", PIN: 1234).
