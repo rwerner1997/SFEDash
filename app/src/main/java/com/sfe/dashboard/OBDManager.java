@@ -53,6 +53,8 @@ public class OBDManager {
     private String currentHeader = "";
     private String currentCRA    = "";
 
+    private final OBDLogger logger = new OBDLogger();
+
     // Poll-rate tracking
     private int  pollCount  = 0;
     private long pollWindow = System.currentTimeMillis();
@@ -97,7 +99,8 @@ public class OBDManager {
                 data.btStatus = "CONNECTED";
                 data.connected = true;
                 data.obdProtocol = sendCmd("ATDPN").trim();
-                pollLoop();
+                logger.open(ctx);
+                try { pollLoop(); } finally { logger.close(); }
             } catch (Exception e) {
                 Log.w(TAG, "Connection error: " + e.getMessage());
                 data.connected = false;
@@ -276,12 +279,12 @@ public class OBDManager {
 
                 // Mode 22 ECU — knock health, turbo, supplemental channels
                 setHeader("7E0", "7E8");
-                parseThrottleAngle(sendCmdTimeout("221022", CMD_TIMEOUT_SLOW));  // throttle body °
-                parseBoostDirect(sendCmdTimeout("2210A6", CMD_TIMEOUT_SLOW));    // direct boost psi
-                parseKnockCorr(sendCmdTimeout("223018", CMD_TIMEOUT_SLOW));      // was 2210AF (spec §7) — reverted; 223018 confirmed working
-                parseWastegate(sendCmdTimeout("2210A8", CMD_TIMEOUT_SLOW));
-                parseIAT(sendCmdTimeout("22101F", CMD_TIMEOUT_SLOW));
-                parseFineKnock(sendCmdTimeout("2210B0", CMD_TIMEOUT_SLOW));
+                parseThrottleAngle(sendM22("221022", CMD_TIMEOUT_SLOW));  // throttle body °
+                parseBoostDirect(sendM22("2210A6", CMD_TIMEOUT_SLOW));    // direct boost psi
+                parseKnockCorr(sendM22("223018", CMD_TIMEOUT_SLOW));      // was 2210AF (spec §7) — reverted; 223018 confirmed working
+                parseWastegate(sendM22("2210A8", CMD_TIMEOUT_SLOW));
+                parseIAT(sendM22("22101F", CMD_TIMEOUT_SLOW));
+                parseFineKnock(sendM22("2210B0", CMD_TIMEOUT_SLOW));
             }
 
             // ════════════════════════════════════════════════════
@@ -303,17 +306,17 @@ public class OBDManager {
                 // when ATSH changes (e.g. 7DF→7E0), leaving the filter stale and causing
                 // the ECU response to be missed or mixed with bus noise from other ECUs.
                 setHeaderForce("7E0", "7E8");
-                parseCVTTemp(sendCmdTimeout("221021", CMD_TIMEOUT_SLOW));        // ECM, not TCU — confirmed via terminal
-                parseTargetMAP(sendCmdTimeout("223050", CMD_TIMEOUT_SLOW));
-                parseBattTemp(sendCmdTimeout("22309A", CMD_TIMEOUT_SLOW));
+                parseCVTTemp(sendM22("221021", CMD_TIMEOUT_SLOW));        // ECM, not TCU — confirmed via terminal
+                parseTargetMAP(sendM22("223050", CMD_TIMEOUT_SLOW));
+                parseBattTemp(sendM22("22309A", CMD_TIMEOUT_SLOW));
                 // Roughness only needed on ROUGHNESS page (3)
                 // PIDs confirmed by ScanGauge RM1-RM4 for FA20DIT WRX (firmware 4.22+)
                 // 2230xx range needs extra timeout — ECU response latency slightly higher
                 if (ap == 3) {
-                    parseRoughness(sendCmdTimeout("223062", CMD_TIMEOUT_ROUGH), 1);
-                    parseRoughness(sendCmdTimeout("223048", CMD_TIMEOUT_ROUGH), 2);
-                    parseRoughness(sendCmdTimeout("223068", CMD_TIMEOUT_ROUGH), 3);
-                    parseRoughness(sendCmdTimeout("22304A", CMD_TIMEOUT_ROUGH), 4);
+                    parseRoughness(sendM22("223062", CMD_TIMEOUT_ROUGH), 1);
+                    parseRoughness(sendM22("223048", CMD_TIMEOUT_ROUGH), 2);
+                    parseRoughness(sendM22("223068", CMD_TIMEOUT_ROUGH), 3);
+                    parseRoughness(sendM22("22304A", CMD_TIMEOUT_ROUGH), 4);
                 }
             }
 
@@ -322,7 +325,7 @@ public class OBDManager {
             // ════════════════════════════════════════════════════
             if (loopCount % 10 == 7) {
                 setHeader("7E0", "7E8");
-                parseDAM(sendCmdTimeout("2210B1", CMD_TIMEOUT_SLOW));
+                parseDAM(sendM22("2210B1", CMD_TIMEOUT_SLOW));
             }
 
             data.updatePeaks();
@@ -356,6 +359,19 @@ public class OBDManager {
         outStream.write((cmd + "\r").getBytes());
         outStream.flush();
         return readUntilPrompt(timeoutMs);
+    }
+
+    /**
+     * Send a Mode 22 command, log the raw response and first two data bytes, then return
+     * the response for the caller's parser.  Drop-in replacement for sendCmdTimeout on
+     * all "22xxxx" PIDs.
+     */
+    private String sendM22(String pid, int timeoutMs) throws IOException {
+        String r = sendCmdTimeout(pid, timeoutMs);
+        int b0 = isError(r) ? -1 : m22byte(r, 0);
+        int b1 = (b0 >= 0)  ? m22byte(r, 1) : -1;   // -1 for single-byte responses
+        logger.log(pid, r, b0, b1);
+        return r;
     }
 
     /** Set CAN transmit header (ATSH) and receive-address filter (ATCRA) together.
