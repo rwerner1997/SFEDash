@@ -308,7 +308,8 @@ public class OBDManager {
                 setHeader("7E0", "7E8");
                 parseThrottleAngle(sendM22("221022", CMD_TIMEOUT_SLOW));  // throttle body °
                 parseBoostDirect(sendM22("2210A6", CMD_TIMEOUT_SLOW));    // direct boost psi
-                parseKnockCorr(sendM22("223018", CMD_TIMEOUT_SLOW));      // was 2210AF (spec §7) — reverted; 223018 confirmed working
+                // 223018 (knock feedback) returns 7F2231 on every poll — not supported on this ECU.
+                // Removing the poll keeps knockCorr=NaN permanently, preventing spurious knock alerts.
                 parseWastegate(sendM22("2210A8", CMD_TIMEOUT_SLOW));
                 parseIAT(sendM22("22101F", CMD_TIMEOUT_SLOW));
                 parseFineKnock(sendM22("2210B0", CMD_TIMEOUT_SLOW));
@@ -333,9 +334,16 @@ public class OBDManager {
                 // when ATSH changes (e.g. 7DF→7E0), leaving the filter stale and causing
                 // the ECU response to be missed or mixed with bus noise from other ECUs.
                 setHeaderForce("7E0", "7E8");
-                parseCVTTemp(sendM22("221021", CMD_TIMEOUT_SLOW));        // ECM, not TCU — confirmed via terminal
                 parseTargetMAP(sendM22("223050", CMD_TIMEOUT_SLOW));
                 parseBattTemp(sendM22("22309A", CMD_TIMEOUT_SLOW));
+
+                // ── TCU (7E1→7E9): CVT fluid temp ────────────────
+                // 22104F confirmed: byte-40 = °C.  At idle = 75°C; 10 min after shutoff = ~110°C
+                // (heat soak) — consistent with live CVT fluid temp behaviour.
+                setHeaderForce("7E1", "7E9");
+                parseCVTTemp(sendM22("22104F", CMD_TIMEOUT_SLOW));
+                // Restore ECM header so subsequent Tier 3d poll lands on 7E0
+                setHeaderForce("7E0", "7E8");
                 // Roughness only needed on ROUGHNESS page (3)
                 // PIDs confirmed by ScanGauge RM1-RM4 for FA20DIT WRX (firmware 4.22+)
                 // 2230xx range needs extra timeout — ECU response latency slightly higher
@@ -923,11 +931,11 @@ public class OBDManager {
         data.fuelPumpPct = a / 255f * 100f;
     }
 
-    // ── Mode 22 ECM — CVT fluid temp (on ECU 7E0, not TCU) ──────────────────────────
+    // ── Mode 22 TCU — CVT fluid temp ─────────────────────────────────────────────────
 
     private void parseCVTTemp(String r) {
-        // 221021 — CVT fluid temperature °C — lives on ECM (7E0/7E8), not TCU
-        // Terminal confirmed: 221017 returns 7F2231 on both ECM+TCU; 221021 works on ECM only
+        // 22104F on TCU (7E1/7E9) — CVT fluid temperature °C, formula: byte - 40
+        // Confirmed: 0x73 (75°C) at idle; ~110°C after 10-min heat soak post-shutoff
         if (isError(r)) return;
         int a = m22byte(r, 0); if (a < 0) return;
         float v = a - 40f;
