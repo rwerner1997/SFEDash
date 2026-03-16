@@ -190,12 +190,12 @@ public class DashView extends SurfaceView implements SurfaceHolder.Callback {
                 pid("LTFT","%",-10,10,1,        fl(-10,-5,-1,1),fl(-5,-1,1,9e9f),cs("red","orange","green","yellow")),
                 pid("INJ DUTY","%",0,100,1,     fl(0,50,75,90),fl(50,75,90,9e9f),cs("green","yellow","orange","red")),
                 pid("INJ PULSE","ms",0,10,2,    fl(0,4,7,9),fl(4,7,9,9e9f),cs("green","cyan","yellow","red"))),
-            // ── Page 4: ROUGHNESS ────────────────────────────────────
-            new PageDef("ROUGHNESS","CYL MONITORS","cylinder",-1,
-                pid("CYL 1","",0,100,1, fl(0,10,30),fl(10,30,9e9f),cs("green","yellow","red")),
-                pid("CYL 2","",0,100,1, fl(0,10,30),fl(10,30,9e9f),cs("green","yellow","red")),
-                pid("CYL 3","",0,100,1, fl(0,10,30),fl(10,30,9e9f),cs("green","yellow","red")),
-                pid("CYL 4","",0,100,1, fl(0,10,30),fl(10,30,9e9f),cs("green","yellow","red"))),
+            // ── Page 4: ENGINE VITALS ────────────────────────────────
+            new PageDef("ENGINE VITALS","BLOCK · LOAD · VVT · AVCS","cylinder",-1,
+                pid("LOAD","%",0,100,0,      fl(0,40,70,90),fl(40,70,90,9e9f),cs("green","yellow","orange","red")),
+                pid("THROTTLE","%",0,100,0,  fl(0,25,60,85),fl(25,60,85,9e9f),cs("green","cyan","yellow","red")),
+                pid("OIL TEMP","°F",32,266,0,fl(32,158,228,248),fl(158,228,248,9e9f),cs("blue","green","yellow","red")),
+                pid("VVT","°",0,45,1,        fl(0,5,20,35),fl(5,20,35,9e9f),cs("blue","cyan","green","yellow"))),
             // ── Page 5: G-FORCE ──────────────────────────────────────
             new PageDef("G-FORCE","DYNAMICS","gforce",0,
                 pid("ACCEL (LONG)","G",-1.2f,1.2f,3, fl(-0.15f,0.15f,0.4f),fl(0.15f,0.4f,9e9f),cs("cyan","green","yellow")),
@@ -495,7 +495,7 @@ public class DashView extends SurfaceView implements SurfaceHolder.Callback {
             {d.coolantF(), d.oilTempF(), d.cvtTempF(), d.catTempF()},                     // 1 TEMPS
             {d.boostPsi(), d.wastegatePct, d.injDutyCyclePct, d.stftPct},                 // 2 BOOST
             {d.stftPct, d.ltftPct, d.injDutyCyclePct, d.injPulseMs},                      // 3 FUEL
-            {d.rough1, d.rough2, d.rough3, d.rough4},                                     // 4 ROUGHNESS
+            {d.loadPct, d.pedalPct, d.oilTempF(), d.vvtAngleL},                           // 4 ENGINE VITALS
             {gLong, d.speedMph(), d.rpm, d.loadPct},                                      // 5 G-FORCE
             {d.timingDeg, d.stftPct, d.fineKnockDeg, d.damRatio},                         // 6 TIMING
             {d.peakBoostPsi, d.peakRpm, d.peakTimingDeg, d.peakLoadPct,                   // 7 SESSION
@@ -1073,12 +1073,12 @@ public class DashView extends SurfaceView implements SurfaceHolder.Callback {
         fillRect(c, 0,27,LW,22, t.dim, 1f);
         fillRect(c, 0,27,3,22, t.accent, 1f);
         sf(10,true,true); textP.setColor(t.white); textP.setAlpha(255); textP.setTextAlign(Paint.Align.CENTER);
-        c.drawText("ROUGHNESS", LW/2f, 42, textP);
-        sf(7,false,false); textP.setColor(t.accent); c.drawText("FA20DIT CYLINDER MONITOR", LW/2f, 52, textP);
+        c.drawText("ENGINE VITALS", LW/2f, 42, textP);
+        sf(7,false,false); textP.setColor(t.accent); c.drawText("BLOCK · LOAD · VVT · AVCS", LW/2f, 52, textP);
         hline(c,t,53);
 
         DashData d = DashData.get();
-        float[] roughVals = {d.rough1, d.rough2, d.rough3, d.rough4};
+        float[] vals = {d.loadPct, d.pedalPct, d.oilTempF(), d.vvtAngleL};
         float CY=210, BORE=36, STROKE=40, PISTH=13, WALL=2, CR=18;
         float crankX=LW/2f, crankY=CY;
         DashData dd=DashData.get();
@@ -1155,10 +1155,11 @@ public class DashView extends SurfaceView implements SurfaceHolder.Callback {
         boolean[] isLeft = {true,true,false,false};
         int[] cpIdx = {0,1,1,0};
         for (int ci=0; ci<4; ci++) {
-            float rv = roughVals[ci];
+            float rv = vals[ci];
             boolean rvNaN = Float.isNaN(rv);
             PidDef pid = PAGES[4].pids[ci];
             int col = rvNaN ? ac(t.label, 0.35f) : bandColor(pid, rv, t);
+            float nv = rvNaN ? 0f : nrm(pid, rv);
             float rY = rowY[ci][0];
             float pisPos = (1 - cos(engAngle + FA20_PHASE[ci])) / 2f;
             boolean isl = isLeft[ci];
@@ -1184,8 +1185,8 @@ public class DashView extends SurfaceView implements SurfaceHolder.Callback {
                 c.drawRect(boreStartX-WALL, boreTop-WALL, boreEndX+WALL, boreTop+BORE+WALL, strokeP);
             }
 
-            // Roughness glow overlay on bore
-            if (!rvNaN && rv > 5f) fillRect(c, boreStartX, boreTop, boreLen, BORE, col, Math.min(0.25f, rv/200f));
+            // Value glow overlay on bore (normalized intensity)
+            if (!rvNaN && nv > 0.1f) fillRect(c, boreStartX, boreTop, boreLen, BORE, col, nv * 0.2f);
 
             float phe = isl ? boreStartX+pisPos*STROKE : boreEndX-pisPos*STROKE-PISTH;
             // Piston rings highlight
@@ -1242,7 +1243,7 @@ public class DashView extends SurfaceView implements SurfaceHolder.Callback {
         float cW=78,cH=82,cY2=312;
         for (int i=0; i<4; i++) {
             float cx2=i*(cW+2)+2;
-            float rv=roughVals[i]; boolean rvNaN2=Float.isNaN(rv);
+            float rv=vals[i]; boolean rvNaN2=Float.isNaN(rv);
             PidDef pid=PAGES[4].pids[i];
             int col = rvNaN2 ? ac(t.label, 0.35f) : bandColor(pid,rv,t);
             float nv = rvNaN2 ? 0f : nrm(pid,rv);
@@ -1252,12 +1253,12 @@ public class DashView extends SurfaceView implements SurfaceHolder.Callback {
             strokeRect(c,cx2,cY2,cW,cH, t.border, 0.35f, 1f);
             cbrk(c,cx2,cY2,cW,cH, ac(t.accent,0.25f), 4);
             sf(8,true,false); textP.setColor(t.white); textP.setAlpha(255); textP.setTextAlign(Paint.Align.CENTER);
-            c.drawText(new String[]{"CYL 1","CYL 2","CYL 3","CYL 4"}[i], cx2+cW/2f, cY2+15, textP);
+            c.drawText(PAGES[4].pids[i].label, cx2+cW/2f, cY2+15, textP);
             sf(22,true,true); textP.setTextAlign(Paint.Align.CENTER);
-            String rvStr = rvNaN2 ? "---" : String.format("%.1f",rv);
+            String rvStr = rvNaN2 ? "---" : String.format("%."+PAGES[4].pids[i].dec+"f", rv);
             textShadow(c, rvStr, cx2+cW/2f, cY2+44, t.bg, col);
             sf(7,false,false); textP.setColor(col); textP.setTextAlign(Paint.Align.CENTER);
-            c.drawText(rvNaN2 ? "NO DATA" : rv<10?"OK":rv<30?"WATCH":"KNOCK", cx2+cW/2f, cY2+58, textP);
+            c.drawText(rvNaN2 ? "NO DATA" : PAGES[4].pids[i].unit, cx2+cW/2f, cY2+58, textP);
             // mini bar
             float bx=cx2+6, by=cY2+cH-14, bw=cW-12;
             fillRect(c,bx,by,bw,5, t.bg, 1f);

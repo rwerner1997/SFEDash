@@ -314,6 +314,7 @@ public class OBDManager {
                 parseWastegate(sendM22("2210A8", CMD_TIMEOUT_SLOW));
                 parseIAT(sendM22("22101F", CMD_TIMEOUT_SLOW));
                 parseFineKnock(sendM22("2210B0", CMD_TIMEOUT_SLOW));
+                parseVvtAngleL(sendM22("2210B9", CMD_TIMEOUT_SLOW));
             }
 
             // ════════════════════════════════════════════════════
@@ -343,15 +344,6 @@ public class OBDManager {
                 setHeaderForce("7E1", "7E9");
                 parseCVTTemp(sendM22("2210D2", CMD_TIMEOUT_SLOW));
                 setHeaderForce("7E0", "7E8");
-                // Roughness only needed on ROUGHNESS page (4)
-                // PIDs confirmed by ScanGauge RM1-RM4 for FA20DIT WRX (firmware 4.22+)
-                // 2230xx range needs extra timeout — ECU response latency slightly higher
-                if (ap == 4) {
-                    parseRoughness(sendM22("223062", CMD_TIMEOUT_ROUGH), 1);
-                    parseRoughness(sendM22("223048", CMD_TIMEOUT_ROUGH), 2);
-                    parseRoughness(sendM22("223068", CMD_TIMEOUT_ROUGH), 3);
-                    parseRoughness(sendM22("22304A", CMD_TIMEOUT_ROUGH), 4);
-                }
             }
 
             // ════════════════════════════════════════════════════
