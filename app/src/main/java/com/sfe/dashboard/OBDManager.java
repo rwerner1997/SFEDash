@@ -336,16 +336,11 @@ public class OBDManager {
                 setHeaderForce("7E0", "7E8");
                 parseTargetMAP(sendM22("223050", CMD_TIMEOUT_SLOW));
                 parseBattTemp(sendM22("22309A", CMD_TIMEOUT_SLOW));
-                // CVT temp: 22104F on TCU confirmed STATIC (0x73 for 12+ min incl. WOT).
-                // 221021 on ECM was also static.  Correct PID still unknown.
-                // TODO SCAN: poll remaining TCU candidates so they appear in the log.
-                // Remove this block once a live sensor is identified.
+                // CVT temp: TCU 2210C9, formula byte-40 °C.
+                // 22104E (static 50°C) and 221094 (static 108°C) confirmed dead — not live sensors.
                 setHeaderForce("7E1", "7E9");
-                sendM22("22104E", CMD_TIMEOUT_SLOW);  // byte-40 = 50°C at scan — CVT temp candidate
-                sendM22("221094", CMD_TIMEOUT_SLOW);  // byte-40 = 108°C at scan — CVT temp candidate
-                sendM22("2210C9", CMD_TIMEOUT_SLOW);  // byte-40 = 26°C at scan — CVT temp candidate
+                parseCVTTemp(sendM22("2210C9", CMD_TIMEOUT_SLOW));
                 setHeaderForce("7E0", "7E8");
-                data.cvtTempC = Float.NaN;
                 // Roughness only needed on ROUGHNESS page (3)
                 // PIDs confirmed by ScanGauge RM1-RM4 for FA20DIT WRX (firmware 4.22+)
                 // 2230xx range needs extra timeout — ECU response latency slightly higher
@@ -936,12 +931,12 @@ public class OBDManager {
     // ── Mode 22 TCU — CVT fluid temp ─────────────────────────────────────────────────
 
     private void parseCVTTemp(String r) {
-        // 22104F on TCU (7E1/7E9) — CVT fluid temperature °C, formula: byte - 40
-        // Confirmed: 0x73 (75°C) at idle; ~110°C after 10-min heat soak post-shutoff
+        // 2210C9 on TCU (7E1/7E9) — CVT fluid temperature °C, formula: byte - 40
+        // byte=0x00 is a power-off/init sentinel (-40°C); guard excludes it.
         if (isError(r)) return;
         int a = m22byte(r, 0); if (a < 0) return;
         float v = a - 40f;
-        if (v > -41f && v < 250f) data.cvtTempC = v;
+        if (v > -30f && v < 200f) data.cvtTempC = v;
     }
 
     // ── Mode 22 ECU — ScanGauge extended parsers ──────────────────
