@@ -49,7 +49,7 @@ Source: ScanGauge official XGauge page for Subaru Impreza WRX + Outback CVT.
 | 223068 | Roughness Cyl 3 | raw byte | ScanGauge RM3 confirmed |
 | 22304A | Roughness Cyl 4 | raw byte | ScanGauge RM4 confirmed |
 | 2210A6 | Boost pressure (psi) | TODO verify | Direct boost sensor |
-| 221021 | CVT fluid temp (°C) | `byte - 40` | **⚠ RETURNS STATIC DATA.** Log confirmed response is always `62102137EFE4CD` (4 data bytes, byte[0]=0x37 forever) — value never changes regardless of engine state. This PID does NOT return dynamic CVT fluid temp on this ECU. Need to find correct PID. |
+| 221021 | CVT fluid temp (°C) | `byte - 40` | **⚠ RETURNS STATIC DATA.** Log confirmed response is always `62102137EFE4CD` (4 data bytes, byte[0]=0x37 forever) — value never changes regardless of engine state. This PID does NOT return dynamic CVT fluid temp on this ECU. |
 | 22101F | IAT | `byte - 40` | **Returns 7F2231 on every poll on this car — PID not supported.** `iatC` always NaN. |
 
 ## Confirmed Mode 22 PIDs (TCU 7E1)
@@ -69,14 +69,14 @@ Source: ScanGauge Outback CVT XGauge page + PID scan.
 | PID | data_hex at scan | Notes |
 |-----|-----------------|-------|
 | 22104F | 73 | **STATIC** — 0x73 for entire 12-min driving session incl. WOT. Not a live sensor. |
-| 22104E | 5A | byte-40 = 50°C; identity unknown — **CVT temp candidate** |
+| 22104E | 5A | byte-40 = 50°C; **STATIC** — same value every sample across full 406-s drive log. Not a live sensor. |
 | 221091 | C0 | byte-40 = 152°C; too hot for CVT fluid — unknown |
-| 221094 | 94 | byte-40 = 108°C; unknown — **CVT temp candidate** |
+| 221094 | 94 | byte-40 = 108°C; **STATIC** — same value every sample across full 406-s drive log. Not a live sensor. |
 | 221138 | 0C86 | word = 3206; possible shaft speed (RPM?) |
 | 221139 | 060F | word = 1551; possible shaft speed |
 | 22113A | 05DC | word = 1500; possible shaft speed |
 | 221152 | 0EC7 | word = 3783; possible shaft speed (note 22300E/2230D0 did NOT respond) |
-| 2210C9 | 42 | byte-40 = 26°C; unknown — **CVT temp candidate (ambient when cold?)** |
+| 2210C9 | 42 | byte-40 = 26°C; **CONFIRMED CVT FLUID TEMP** — live data across 406-s drive log; ambient cold-soak → gradual warmup; 0x00 is power-off sentinel (guard: reject v ≤ -30°C). |
 
 ## Known Wrong PIDs (do not use)
 - `2210AF` for knock correction — it's engine oil temperature.
@@ -84,6 +84,8 @@ Source: ScanGauge Outback CVT XGauge page + PID scan.
 - `221017` for CVT temp from TCU — returns 7F2231 (error) on this vehicle.
 - `221021` for CVT temp from ECM — returns a STATIC 4-byte response (`37EFE4CD`) that never changes during driving. Not a live sensor.
 - `22104F` for CVT temp from TCU — also STATIC. Returns `0x73` for entire sessions including WOT pulls. Not a live sensor despite appearing plausible at scan time.
+- `22104E` for CVT temp from TCU — STATIC. Returns `0x5A` every sample across full drive log. Not a live sensor.
+- `221094` for CVT temp from TCU — STATIC. Returns `0x94` every sample across full drive log. Not a live sensor.
 - `223018` for knock correction — returns 7F2231 (requestOutOfRange) on every poll. **Poll has been REMOVED from OBDManager.** knockCorr stays NaN permanently.
 - `22101F` for IAT — returns 7F2231 on every poll. Not supported.
 
