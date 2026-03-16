@@ -1253,7 +1253,7 @@ public class DashView extends SurfaceView implements SurfaceHolder.Callback {
             strokeRect(c,cx2,cY2,cW,cH, t.border, 0.35f, 1f);
             cbrk(c,cx2,cY2,cW,cH, ac(t.accent,0.25f), 4);
             sf(8,true,false); textP.setColor(t.white); textP.setAlpha(255); textP.setTextAlign(Paint.Align.CENTER);
-            c.drawText(PAGES[4].pids[i].label, cx2+cW/2f, cY2+15, textP);
+            c.drawText(PAGES[4].pids[i].lbl, cx2+cW/2f, cY2+15, textP);
             sf(22,true,true); textP.setTextAlign(Paint.Align.CENTER);
             String rvStr = rvNaN2 ? "---" : String.format("%."+PAGES[4].pids[i].dec+"f", rv);
             textShadow(c, rvStr, cx2+cW/2f, cY2+44, t.bg, col);
