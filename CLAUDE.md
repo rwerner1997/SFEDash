@@ -43,7 +43,7 @@ Source: ScanGauge official XGauge page for Subaru Impreza WRX + Outback CVT.
 | 223018 | Feedback Knock Correction (°) | `byte / 4 - 32` | **Returns 7F2231 (requestOutOfRange) on every poll on this car — PID not supported.** `knockCorr` always NaN; knock alert will never fire from this source. |
 | 2210AF | **Engine Oil Temp** (°F) | `byte * 9/5 - 40` | ScanGauge EOT — **NOT knock corr** |
 | 2210B0 | Fine Knock Learning (°) | `byte / 4 - 32` | Works on this ECU; unverified formula. Log shows values ~0x28(-22°) at idle/light load and 0x9B-0x9D(+6.75–7.25°) occasionally. Possibly correct. |
-| 2210B1 | DAM — Dynamic Advance Multiplier | `byte / 255` (TODO verify) | Log shows 0x00(0) and 0x03(3) → DAM near 0% indicating ECU has pulled timing historically. |
+| 2210B1 | DAM — Dynamic Advance Multiplier | `byte / 16` | FA20DIT encodes DAM as 0–16 counts; 16 = 1.0 (full advance). Observed: 0x00, 0x01, 0x03, 0x0C across sessions. Prior formula was /255 which kept all values near 0 — corrected. |
 | 223062 | Roughness Cyl 1 | raw byte | ScanGauge RM1 confirmed |
 | 223048 | Roughness Cyl 2 | raw byte | ScanGauge RM2 confirmed |
 | 223068 | Roughness Cyl 3 | raw byte | ScanGauge RM3 confirmed |

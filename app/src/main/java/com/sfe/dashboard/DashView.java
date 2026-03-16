@@ -1266,7 +1266,7 @@ public class DashView extends SurfaceView implements SurfaceHolder.Callback {
             fillRect(c,sx3+(i>0?1:0),398,2,58, scols2[i], 1f);
             sf(7,true,false); textP.setColor(t.white); textP.setAlpha(255); textP.setTextAlign(Paint.Align.LEFT);
             c.drawText(slbls2[i],sx3+6,408,textP);
-            sf(9,true,true); textP.setColor(scols2[i]); c.drawText(svals2[i],sx3+6,450,textP);
+            sf(18,true,true); textP.setColor(scols2[i]); c.drawText(svals2[i],sx3+6,458,textP);
             if(i<2) fillRect(c,sx3+(LW/3)-1,398,1,58, t.border, 0.3f);
         }
     }

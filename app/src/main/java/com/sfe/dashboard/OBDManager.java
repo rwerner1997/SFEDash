@@ -755,7 +755,9 @@ public class OBDManager {
     private void parseTiming(String r) {
         r = strip(r); if (isError(r) || r.length() < 6) return;
         int a = byteAt(r, 2); if (a < 0) return;
-        data.timingDeg = a / 2f - 64f;
+        float v = a / 2f - 64f;
+        if (v < -20f || v > 55f) return;  // reject physically implausible values (ELM glitch)
+        data.timingDeg = v;
     }
 
     private void parseMAF(String r) {
@@ -1046,12 +1048,13 @@ public class OBDManager {
     }
 
     private void parseDAM(String r) {
-        // 2210B1 — dynamic advance multiplier ratio (spec §7; was EGR steps)
-        // 1.0 = nominal, <1.0 = ECU has pulled timing due to knock history
-        // TODO: verify formula on car
+        // 2210B1 — dynamic advance multiplier ratio.
+        // FA20DIT encodes DAM as 0–16 counts; 16 = 1.0 (full advance), 0 = fully pulled.
+        // Observed values: 0x00, 0x01, 0x03, 0x0C (0, 1, 3, 12 → 0.0, 0.06, 0.19, 0.75).
+        // Prior formula was /255 which kept values microscopic — corrected to /16.
         if (isError(r)) return;
         int a = m22byte(r, 0); if (a < 0) return;
-        data.damRatio = a / 255f;
+        data.damRatio = Math.min(1f, a / 16f);
     }
 
     // ── Mode 01 — additional parsers ─────────────────────────────
