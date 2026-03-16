@@ -338,7 +338,13 @@ public class OBDManager {
                 parseBattTemp(sendM22("22309A", CMD_TIMEOUT_SLOW));
                 // CVT temp: 22104F on TCU confirmed STATIC (0x73 for 12+ min incl. WOT).
                 // 221021 on ECM was also static.  Correct PID still unknown.
-                // Remaining TCU candidates from PID scan: 22104E (50°C), 221094 (108°C), 2210C9 (26°C).
+                // TODO SCAN: poll remaining TCU candidates so they appear in the log.
+                // Remove this block once a live sensor is identified.
+                setHeaderForce("7E1", "7E9");
+                sendM22("22104E", CMD_TIMEOUT_SLOW);  // byte-40 = 50°C at scan — CVT temp candidate
+                sendM22("221094", CMD_TIMEOUT_SLOW);  // byte-40 = 108°C at scan — CVT temp candidate
+                sendM22("2210C9", CMD_TIMEOUT_SLOW);  // byte-40 = 26°C at scan — CVT temp candidate
+                setHeaderForce("7E0", "7E8");
                 data.cvtTempC = Float.NaN;
                 // Roughness only needed on ROUGHNESS page (3)
                 // PIDs confirmed by ScanGauge RM1-RM4 for FA20DIT WRX (firmware 4.22+)
