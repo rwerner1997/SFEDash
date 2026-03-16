@@ -306,13 +306,15 @@ public class OBDManager {
 
                 // Mode 22 ECU — knock health, turbo, supplemental channels
                 setHeader("7E0", "7E8");
-                parseThrottleAngle(sendM22("221022", CMD_TIMEOUT_SLOW));  // throttle body °
-                parseBoostDirect(sendM22("2210A6", CMD_TIMEOUT_SLOW));    // direct boost psi
+                // 2210A6 direct boost sensor dropped — unverified formula gives wrong readings.
+                // Boost is calculated from MAP-baro in DashData.boostPsi().
                 // 223018 (knock feedback) returns 7F2231 on every poll — not supported on this ECU.
                 // Removing the poll keeps knockCorr=NaN permanently, preventing spurious knock alerts.
+                // 221022 (throttle body °) dropped — field never displayed; pedal (0145) used instead.
+                // 22101F (IAT) dropped — returns 7F2231 (requestOutOfRange) on every poll, always NaN.
                 parseWastegate(sendM22("2210A8", CMD_TIMEOUT_SLOW));
-                parseIAT(sendM22("22101F", CMD_TIMEOUT_SLOW));
                 parseFineKnock(sendM22("2210B0", CMD_TIMEOUT_SLOW));
+                parseVvtAngleL(sendM22("2210B9", CMD_TIMEOUT_SLOW));
             }
 
             // ════════════════════════════════════════════════════
@@ -335,30 +337,23 @@ public class OBDManager {
                 // the ECU response to be missed or mixed with bus noise from other ECUs.
                 setHeaderForce("7E0", "7E8");
                 parseTargetMAP(sendM22("223050", CMD_TIMEOUT_SLOW));
-                parseBattTemp(sendM22("22309A", CMD_TIMEOUT_SLOW));
+                // 22309A (batt temp) dropped — field never displayed or alerted on.
                 // CVT temp: TCU 2210D2, formula byte-50 °C.
                 // Confirmed across 3 reference points (pid_scan_20260315, _0316_083419, _084742).
                 // 2210C9 swings wildly with braking/acceleration — not a temp sensor.
                 setHeaderForce("7E1", "7E9");
                 parseCVTTemp(sendM22("2210D2", CMD_TIMEOUT_SLOW));
                 setHeaderForce("7E0", "7E8");
-                // Roughness only needed on ROUGHNESS page (3)
-                // PIDs confirmed by ScanGauge RM1-RM4 for FA20DIT WRX (firmware 4.22+)
-                // 2230xx range needs extra timeout — ECU response latency slightly higher
-                if (ap == 3) {
-                    parseRoughness(sendM22("223062", CMD_TIMEOUT_ROUGH), 1);
-                    parseRoughness(sendM22("223048", CMD_TIMEOUT_ROUGH), 2);
-                    parseRoughness(sendM22("223068", CMD_TIMEOUT_ROUGH), 3);
-                    parseRoughness(sendM22("22304A", CMD_TIMEOUT_ROUGH), 4);
-                }
             }
 
             // ════════════════════════════════════════════════════
-            // TIER 3d — DAM: every 10th loop, offset 7
+            // TIER 3d — DAM + fuel system: every 10th loop, offset 7
             // ════════════════════════════════════════════════════
             if (loopCount % 10 == 7) {
                 setHeader("7E0", "7E8");
                 parseDAM(sendM22("2210B1", CMD_TIMEOUT_SLOW));
+                parseInjDutyCycle(sendM22("2210C1", CMD_TIMEOUT_SLOW));
+                parseInjPulse(sendM22("2210B4", CMD_TIMEOUT_SLOW));  // 2210C0 returns static 80000007; 2210B4 is live
             }
 
             data.updatePeaks();
@@ -667,7 +662,10 @@ public class OBDManager {
         r = strip(r); if (isError(r) || r.length() < 8) return;
         int a = byteAt(r, 2), b = byteAt(r, 3);
         if (a < 0 || b < 0) return;
-        data.rpm = (a * 256f + b) / 4f;
+        float raw = (a * 256f + b) / 4f;
+        float prev = data.rpm;
+        // EMA α=0.25: ~0.2s time constant at 20Hz — smooths noise without perceptible lag
+        data.rpm = Float.isNaN(prev) ? raw : prev * 0.75f + raw * 0.25f;
     }
 
     private void parseSpeed(String r) {
@@ -979,11 +977,11 @@ public class OBDManager {
     }
 
     private void parseInjPulse(String r) {
-        // 2210C0 — injector pulse width ms (spec §8; was 2210A3). TODO: verify formula on car.
-        // Assumes 2-byte word in 0.001ms units: word * 0.001 = ms
+        // 2210B4 — injector pulse width ms. PID scan confirmed live (2.7–5.0 ms at idle).
+        // Formula: byte * 0.1 ms (unverified — 2210C0 was static 80000007 and dropped).
         if (isError(r)) return;
-        int v = m22word(r); if (v < 0) return;
-        data.injPulseMs = v * 0.001f;
+        int a = m22byte(r, 0); if (a < 0) return;
+        data.injPulseMs = a * 0.1f;
     }
 
     private void parseInjDutyCycle(String r) {
