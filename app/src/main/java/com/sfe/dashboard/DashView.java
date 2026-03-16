@@ -941,7 +941,7 @@ public class DashView extends SurfaceView implements SurfaceHolder.Callback {
 
     /** Two narrow vertical strips on either side of the arc gauge showing always-on vitals.
      *  Left:  RPM (top) + Boost (bottom)
-     *  Right: Coolant °F (top) + Oil °F (bottom)
+     *  Right: Speed MPH (top) + Oil °F (bottom)
      *  Each strip is 68 px wide — leaves a ~4 px gap before the arc track outer edge (~72 px). */
     private void drawSideStrips(Canvas c, Theme t) {
         DashData d = DashData.get();
@@ -960,8 +960,8 @@ public class DashView extends SurfaceView implements SurfaceHolder.Callback {
         // Left strip: RPM (top slot) + Boost (bottom slot)
         drawStripItem(c, t, 0,           topY, stripW, midY - topY, PAGES[0].pids[0], d.rpm,       "RPM",  "RPM");
         drawStripItem(c, t, 0,           midY, stripW, botY - midY, PAGES[2].pids[0], d.boostPsi(),"BOOST","PSI");
-        // Right strip: Coolant (top slot) + Oil (bottom slot)
-        drawStripItem(c, t, LW - stripW, topY, stripW, midY - topY, PAGES[1].pids[0], d.coolantF(),"COOL", "°F");
+        // Right strip: Speed (top slot) + Oil (bottom slot)
+        drawStripItem(c, t, LW - stripW, topY, stripW, midY - topY, PAGES[4].pids[1], d.speedMph(),"SPD",  "MPH");
         drawStripItem(c, t, LW - stripW, midY, stripW, botY - midY, PAGES[1].pids[1], d.oilTempF(),"OIL",  "°F");
     }
 
