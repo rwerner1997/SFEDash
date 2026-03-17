@@ -9,6 +9,7 @@ import android.os.Build;
 import android.os.Bundle;
 import android.view.*;
 import android.widget.*;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 
 
@@ -27,8 +28,9 @@ import android.widget.*;
  */
 public class MainActivity extends Activity {
 
-    private DashView  dashView;
+    private DashView   dashView;
     private OBDManager obdManager;
+    private final AtomicBoolean serviceStarted = new AtomicBoolean(false);
 
     // ── Double-tap detection ─────────────────────────────────────
     private long  leftLastTapMs = 0;
@@ -93,8 +95,8 @@ public class MainActivity extends Activity {
         btnLeft.setOnTouchListener((v, ev) -> onLeftTouch(ev));
         btnRight.setOnTouchListener((v, ev) -> onRightTouch(ev));
 
-        LinearLayout.LayoutParams bp = new LinearLayout.LayoutParams(0,
-                ViewGroup.LayoutParams.WRAP_CONTENT, 1f);
+        int btnH = (int)(72 * getResources().getDisplayMetrics().density);
+        LinearLayout.LayoutParams bp = new LinearLayout.LayoutParams(0, btnH, 1f);
         btnRow.addView(btnLeft,  bp);
         btnRow.addView(btnRight, bp);
 
@@ -120,7 +122,7 @@ public class MainActivity extends Activity {
         b.setTextColor(0xFFCCCCCC);
         b.setBackgroundColor(0xFF111111);
         b.setTextSize(14f);
-        b.setPadding(24, 18, 24, 18);
+        b.setPadding(24, 0, 24, 0);
         b.setTypeface(android.graphics.Typeface.MONOSPACE);
         b.setAllCaps(false);
         return b;
@@ -261,8 +263,24 @@ public class MainActivity extends Activity {
     }
 
     @Override
+    protected void onResume() {
+        super.onResume();
+        // Start the foreground service so OBD polling survives being minimized.
+        if (serviceStarted.compareAndSet(false, true)) {
+            Intent svc = new Intent(this, DashService.class);
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                startForegroundService(svc);
+            } else {
+                startService(svc);
+            }
+        }
+    }
+
+    @Override
     protected void onDestroy() {
         super.onDestroy();
         if (obdManager != null) obdManager.stop();
+        // Stop the service when the user explicitly closes the app.
+        stopService(new Intent(this, DashService.class));
     }
 }

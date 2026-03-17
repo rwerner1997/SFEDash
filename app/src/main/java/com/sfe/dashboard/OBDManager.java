@@ -281,12 +281,14 @@ public class OBDManager {
             long t0 = System.currentTimeMillis();
 
             // ════════════════════════════════════════════════════
-            // TIER 1 — FAST: every loop (~20Hz target) — RPM + Speed only.
-            // Two PIDs, same header — minimum overhead for maximum refresh.
+            // TIER 1 — FAST: every loop (~20Hz target) — RPM, Speed, MAP.
+            // All Mode 01, same header — no header switch cost.
+            // MAP here drives boostPsi() (MAP-baro) at full refresh rate.
             // ════════════════════════════════════════════════════
             setHeader("7DF", "7E8");
             parseRPM(sendCmd("010C"));
             parseSpeed(sendCmd("010D"));
+            parseMAP(sendCmd("010B"));
 
             // ════════════════════════════════════════════════════
             // TIER 2 — MEDIUM: every 3rd loop (~7Hz)
@@ -294,9 +296,8 @@ public class OBDManager {
             // Knock, wastegate, IAT, fine knock (Mode 22).
             // ════════════════════════════════════════════════════
             if (loopCount % 3 == 0) {
-                // Mode 01 — engine vitals
+                // Mode 01 — engine vitals (MAP moved to Tier 1 for smooth boost display)
                 setHeader("7DF", "7E8");
-                parseMAP(sendCmd("010B"));
                 parseTiming(sendCmd("010E"));
                 parseMAF(sendCmd("0110"));
                 parsePedal(sendCmd("0145"));
@@ -663,15 +664,33 @@ public class OBDManager {
         int a = byteAt(r, 2), b = byteAt(r, 3);
         if (a < 0 || b < 0) return;
         float raw = (a * 256f + b) / 4f;
+        if (raw > 8000f) return;  // reject garbled ELM frames (FA20DIT redline ~7000 RPM)
         float prev = data.rpm;
+        long nowMs = System.currentTimeMillis();
         // EMA α=0.25: ~0.2s time constant at 20Hz — smooths noise without perceptible lag
-        data.rpm = Float.isNaN(prev) ? raw : prev * 0.75f + raw * 0.25f;
+        float next = Float.isNaN(prev) ? raw : prev * 0.75f + raw * 0.25f;
+        if (!Float.isNaN(prev) && data.rpmLastMs > 0) {
+            float dtMs = nowMs - data.rpmLastMs;
+            if (dtMs > 0) data.rpmVelPerMs = (next - prev) / dtMs;
+        } else { data.rpmVelPerMs = 0f; }
+        data.rpm = next;
+        data.rpmLastMs = nowMs;
     }
 
     private void parseSpeed(String r) {
         r = strip(r); if (isError(r) || r.length() < 6) return;
         int a = byteAt(r, 2); if (a < 0) return;
-        data.speedKph = a;
+        float raw = a;
+        float prev = data.speedKph;
+        long nowMs = System.currentTimeMillis();
+        // EMA α=0.4: ~0.12s time constant at 20Hz — smooths 1-kph quantization steps
+        float next = Float.isNaN(prev) ? raw : prev * 0.6f + raw * 0.4f;
+        if (!Float.isNaN(prev) && data.speedLastMs > 0) {
+            float dtMs = nowMs - data.speedLastMs;
+            if (dtMs > 0) data.speedVelPerMs = (next - prev) / dtMs;
+        } else { data.speedVelPerMs = 0f; }
+        data.speedKph = next;
+        data.speedLastMs = nowMs;
     }
 
     private void parsePedal(String r) {
@@ -768,7 +787,17 @@ public class OBDManager {
     private void parseMAP(String r) {
         r = strip(r); if (isError(r) || r.length() < 6) return;
         int a = byteAt(r, 2); if (a < 0) return;
-        data.mapKpa = a;  // kPa absolute
+        float raw = a;  // kPa absolute
+        float prev = data.mapKpa;
+        long nowMs = System.currentTimeMillis();
+        // EMA α=0.3: ~0.17s time constant at 20Hz — smooth boost without hiding spool/blowoff
+        float next = Float.isNaN(prev) ? raw : prev * 0.7f + raw * 0.3f;
+        if (!Float.isNaN(prev) && data.mapLastMs > 0) {
+            float dtMs = nowMs - data.mapLastMs;
+            if (dtMs > 0) data.mapVelPerMs = (next - prev) / dtMs;
+        } else { data.mapVelPerMs = 0f; }
+        data.mapKpa = next;
+        data.mapLastMs = nowMs;
     }
 
     private void parseBaro(String r) {

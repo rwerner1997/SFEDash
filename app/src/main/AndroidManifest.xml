@@ -13,6 +13,11 @@
          Android 10+ uses MediaStore and needs no permission for this. -->
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
         android:maxSdkVersion="28" />
+    <!-- Keep CPU awake and process alive when minimized -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <!-- Android 14+ requires declaring the foreground service type -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
 
     <uses-feature android:name="android.hardware.bluetooth" android:required="true"/>
 
@@ -33,6 +38,11 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
+
+        <service
+            android:name=".DashService"
+            android:foregroundServiceType="connectedDevice"
+            android:exported="false" />
 
     </application>
 </manifest>
