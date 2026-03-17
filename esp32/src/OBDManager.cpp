@@ -335,12 +335,16 @@ void OBDManager::parseRPM(const String& r) {
     if (isError(s) || s.length() < 8) return;
     int a = byteAt(s, 2), b = byteAt(s, 3);
     if (a < 0 || b < 0) return;
-    float newVal = (a * 256.0f + b) / 4.0f;
+    float raw = (a * 256.0f + b) / 4.0f;
+    if (raw > 8000.0f) return;  // reject garbled frames (FA20DIT redline ~7000 RPM)
+    float prev = _data.rpm;
     unsigned long now = millis();
-    if (!isnan(_data.rpm) && _data.rpmLastMs > 0 && now > _data.rpmLastMs) {
-        _data.rpmVelPerMs = (newVal - _data.rpm) / (float)(now - _data.rpmLastMs);
+    // EMA α=0.25: ~0.2s time constant at 20 Hz — smooths noise without perceptible lag
+    float next = isnan(prev) ? raw : prev * 0.75f + raw * 0.25f;
+    if (!isnan(prev) && _data.rpmLastMs > 0 && now > _data.rpmLastMs) {
+        _data.rpmVelPerMs = (next - prev) / (float)(now - _data.rpmLastMs);
     }
-    _data.rpm = newVal;
+    _data.rpm = next;
     _data.rpmLastMs = now;
 }
 
@@ -348,12 +352,15 @@ void OBDManager::parseSpeed(const String& r) {
     String s = strip(r);
     if (isError(s) || s.length() < 6) return;
     int a = byteAt(s, 2); if (a < 0) return;
-    float newVal = (float)a;
+    float raw = (float)a;
+    float prev = _data.speedKph;
     unsigned long now = millis();
-    if (!isnan(_data.speedKph) && _data.speedLastMs > 0 && now > _data.speedLastMs) {
-        _data.speedVelPerMs = (newVal - _data.speedKph) / (float)(now - _data.speedLastMs);
+    // EMA α=0.4: ~0.12s time constant at 7 Hz — smooths 1 kph quantization steps
+    float next = isnan(prev) ? raw : prev * 0.6f + raw * 0.4f;
+    if (!isnan(prev) && _data.speedLastMs > 0 && now > _data.speedLastMs) {
+        _data.speedVelPerMs = (next - prev) / (float)(now - _data.speedLastMs);
     }
-    _data.speedKph = newVal;
+    _data.speedKph = next;
     _data.speedLastMs = now;
 }
 
@@ -397,12 +404,15 @@ void OBDManager::parseMAP(const String& r) {
     String s = strip(r);
     if (isError(s) || s.length() < 6) return;
     int a = byteAt(s, 2); if (a < 0) return;
-    float newVal = (float)a;
+    float raw = (float)a;  // kPa absolute
+    float prev = _data.mapKpa;
     unsigned long now = millis();
-    if (!isnan(_data.mapKpa) && _data.mapLastMs > 0 && now > _data.mapLastMs) {
-        _data.mapVelPerMs = (newVal - _data.mapKpa) / (float)(now - _data.mapLastMs);
+    // EMA α=0.3: ~0.17s time constant at 20 Hz — smooth boost without hiding spool/blowoff
+    float next = isnan(prev) ? raw : prev * 0.7f + raw * 0.3f;
+    if (!isnan(prev) && _data.mapLastMs > 0 && now > _data.mapLastMs) {
+        _data.mapVelPerMs = (next - prev) / (float)(now - _data.mapLastMs);
     }
-    _data.mapKpa = newVal;
+    _data.mapKpa = next;
     _data.mapLastMs = now;
 }
 
