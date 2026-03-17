@@ -281,13 +281,13 @@ public class OBDManager {
             long t0 = System.currentTimeMillis();
 
             // ════════════════════════════════════════════════════
-            // TIER 1 — FAST: every loop (~20Hz target) — RPM, Speed, MAP.
-            // All Mode 01, same header — no header switch cost.
+            // TIER 1 — FAST: every loop (~20Hz target) — RPM, MAP only.
+            // Speed moved to Tier 2: 7Hz is plenty for a speedo and saves one
+            // round trip per loop on the clone adapter (~33% faster hot path).
             // MAP here drives boostPsi() (MAP-baro) at full refresh rate.
             // ════════════════════════════════════════════════════
             setHeader("7DF", "7E8");
             parseRPM(sendCmd("010C"));
-            parseSpeed(sendCmd("010D"));
             parseMAP(sendCmd("010B"));
 
             // ════════════════════════════════════════════════════
@@ -298,6 +298,7 @@ public class OBDManager {
             if (loopCount % 3 == 0) {
                 // Mode 01 — engine vitals (MAP moved to Tier 1 for smooth boost display)
                 setHeader("7DF", "7E8");
+                parseSpeed(sendCmd("010D"));
                 parseTiming(sendCmd("010E"));
                 parseMAF(sendCmd("0110"));
                 parsePedal(sendCmd("0145"));
