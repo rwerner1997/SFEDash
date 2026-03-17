@@ -1019,8 +1019,8 @@ public class DashView extends SurfaceView implements SurfaceHolder.Callback {
         float boost = d.boostPsi();
         // Normalized: 0 at vacuum, 1 at 20 PSI; NaN (no data yet) treated as 0
         float nb = Float.isNaN(boost) ? 0f : Math.max(0f, Math.min(1f, (boost + 2f) / 22f));
-        // Turbo spins at ~15-20× engine speed; scale visually by RPM + boost
-        float turboA = engAngle * (5f + nb * 9f);
+        // Turbo spins faster than engine but kept visually readable; scale by boost level
+        float turboA = engAngle * (2f + nb * 3f);
         float cx = AG_CX, cy = AG_CY;
         int numBlades = 8;
         float outerR = 72f, innerR = 14f;
