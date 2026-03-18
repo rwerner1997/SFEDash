@@ -42,7 +42,9 @@ public class MainActivity extends Activity {
 
     // ── Long-press runnables ──────────────────────────────────────
     private final Runnable leftLongRunnable  = () -> {
-        dashView.nextTheme();
+        // On the averages page, long-press resets trip averages instead of cycling theme.
+        if (dashView.isAveragesPage()) dashView.resetAverages();
+        else dashView.nextTheme();
         leftLongFired = true;
     };
     private final Runnable rightLongRunnable = () -> {

@@ -358,6 +358,7 @@ public class OBDManager {
             }
 
             data.updatePeaks();
+            data.updateAverages();
             data.recordKnockEvent();
 
             loopCount++;
