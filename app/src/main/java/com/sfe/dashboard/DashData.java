@@ -79,6 +79,13 @@ public class DashData {
     // ── CVT fluid temp (on ECM 7E0, not TCU) ─────────────────────
     public volatile float cvtTempC      = Float.NaN; // 221021 — CVT fluid temperature (°C)
 
+    // ── CVT shift selector position (TCU 7E1, PID unverified) ────
+    // 221154 is a trial PID — raw byte logged for formula derivation.
+    // Populated once we confirm the byte-to-position mapping from a log.
+    // Values: NaN = not yet received / PID not supported.
+    // Possible encoding (unverified): 0x40=P, 0x20=R, 0x10=N, 0x08=D, 0x04=S, 0x01=L
+    public volatile float shiftRaw      = Float.NaN; // 221154 raw byte — UNVERIFIED
+
     // ── PID Scan state (written by OBDManager poll thread) ───────
     public volatile boolean scanRunning  = false;   // true while scan is active or showing result
     public volatile String  scanPhase    = "";       // e.g. "ECM 10A3" or "DONE — 23 OK"
