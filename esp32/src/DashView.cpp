@@ -172,7 +172,6 @@ void DashView::draw() {
 // ── Alert logic ───────────────────────────────────────────────────────────────
 
 void DashView::checkAlerts() {
-    if (!isnan(_data.knockCorr)  && _data.knockCorr < -2.5f)     { triggerAlert("SIGNIFICANT KNOCK");  return; }
     if (!isnan(_data.coolantC)   && _data.coolantF() > 225.0f)   { triggerAlert("COOLANT OVERHEAT");   return; }
     if (!isnan(_data.cvtTempC)   && _data.cvtTempF() > 230.0f)   { triggerAlert("CVT OVERHEAT");       return; }
     if (!isnan(_data.oilTempC)   && _data.oilTempF() > 260.0f)   { triggerAlert("OIL OVERHEAT");       return; }
@@ -314,10 +313,10 @@ void DashView::drawTempsPage() {
                  theme().accent, 220, 240);
 
     int tw = 85, th = 56, ty = 202, tx0 = 5;
-    drawTile(tx0,       ty, tw, th, "OIL",    _data.oilTempF(),  "%.0f", "\xB0F");
-    drawTile(tx0 + 90,  ty, tw, th, "CVT",    _data.cvtTempF(),  "%.0f", "\xB0F");
-    drawTile(tx0 + 180, ty, tw, th, "CAT",    _data.catTempF(),  "%.0f", "\xB0F");
-    drawTile(tx0 + 270, ty, tw, th, "BATTMP", _data.battTempF(), "%.0f", "\xB0F");
+    drawTile(tx0,       ty, tw, th, "OIL",  _data.oilTempF(),   "%.0f", "\xB0F");
+    drawTile(tx0 + 90,  ty, tw, th, "CVT",  _data.cvtTempF(),   "%.0f", "\xB0F");
+    drawTile(tx0 + 180, ty, tw, th, "CAT",  _data.catTempF(),   "%.0f", "\xB0F");
+    drawTile(tx0 + 270, ty, tw, th, "FUEL", _data.fuelLevelPct, "%.0f", "%");
 }
 
 // ── Page 2: BOOST ─────────────────────────────────────────────────────────────
@@ -550,6 +549,17 @@ void DashView::drawStatusBar() {
     _tft.setTextDatum(ML_DATUM);
     _tft.setTextColor(_data.connected ? COL_GOOD : COL_WARN, 0x1082);
     _tft.drawString(_data.btStatus, 6, y + STATUS_H/2);
+
+    // Gear position badge
+    {
+        bool gKnown = (_data.shiftPos[0] != '\0');
+        char gBuf[8];
+        snprintf(gBuf, sizeof(gBuf), "GR:%s", gKnown ? (const char*)_data.shiftPos : "--");
+        _tft.setTextFont(2);
+        _tft.setTextColor(gKnown ? theme().accent : COL_DIM, 0x1082);
+        _tft.setTextDatum(ML_DATUM);
+        _tft.drawString(gBuf, 110, y + STATUS_H/2);
+    }
 
     // Protocol + Hz + page name
     char hz[32];

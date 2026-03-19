@@ -79,10 +79,10 @@ private:
     void parseWastegate(const String& r);
     void parseFineKnock(const String& r);
     void parseVvtAngleL(const String& r);
-    void parseBattTemp(const String& r);
     void parseCVTTemp(const String& r);
     void parseDAM(const String& r);
     void parseRoughness(const String& r, int cyl);
+    void parseShiftSelector(const String& r93, const String& r95);
 
     void sleepMs(uint32_t ms);
 
