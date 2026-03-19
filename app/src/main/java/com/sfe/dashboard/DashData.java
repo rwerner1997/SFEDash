@@ -79,14 +79,15 @@ public class DashData {
     // ── CVT fluid temp (on ECM 7E0, not TCU) ─────────────────────
     public volatile float cvtTempC      = Float.NaN; // 221021 — CVT fluid temperature (°C)
 
-    // ── CVT shift selector position (TCU 7E1, PIDs under trial) ─────────────
-    // 221093: scan data shows 0x00 mid-drive / 0x04 parked — bit 2 may = Park.
-    // 221095: scan data shows 0x00 mid-drive / 0x20 parked — bit 5 may = Park.
-    // 221154: CONFIRMED UNSUPPORTED — returns 7F2231 on 100% of polls; removed.
-    // Once a gear-cycle log is reviewed these will be replaced with a decoded
-    // String shiftPos ("P"/"R"/"N"/"D"/"S") and the raw fields removed.
-    public volatile float shiftRaw93    = Float.NaN; // 221093 raw byte — UNVERIFIED
-    public volatile float shiftRaw95    = Float.NaN; // 221095 raw byte — UNVERIFIED
+    // ── CVT shift selector position (TCU 7E1, 221093 + 221095) ──────────────
+    // Confirmed encoding from gear-cycle log sfe_20260318_205734.csv (R→P→N→D pass):
+    //   R: 221093=0x06, 221095=0x21
+    //   P: 221093=0x04, 221095=0x20  (confirmed against 3 parked PID scans)
+    //   N: 221093=0x00, 221095=0x20
+    //   D: 221093=0x00, 221095=0x00  (confirmed mid-drive PID scans)
+    //   S: encoding unknown (not captured in log)
+    // Decoded in OBDManager.parseShiftSelector(); null = no valid reading yet.
+    public volatile String shiftPos     = null;
 
     // ── PID Scan state (written by OBDManager poll thread) ───────
     public volatile boolean scanRunning  = false;   // true while scan is active or showing result
