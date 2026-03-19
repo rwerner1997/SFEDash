@@ -47,8 +47,6 @@ struct DashData {
     // ── Mode 22 ECU (7E0/7E8) ────────────────────────────────────────────────
     volatile float oilTempC       = NAN;  // 015C  (Mode 01)
     volatile float catTempC       = NAN;  // 013C
-    volatile float iatC           = NAN;  // 22101F — NOT SUPPORTED (returns 7F2231); always NaN
-    volatile float knockCorr      = NAN;  // 223018 — NOT SUPPORTED (returns 7F2231); always NaN
     volatile float fineKnockDeg   = NAN;  // 2210B0
     volatile float rough1         = NAN;  // 223062
     volatile float rough2         = NAN;  // 223048
@@ -57,23 +55,23 @@ struct DashData {
     volatile float boostPsiDirect = NAN;  // 2210A6 — reserved; unverified formula; not polled
     volatile float wastegatePct   = NAN;  // 2210A8
     volatile float vvtAngleL      = NAN;  // 2210B9 — VVT intake-left cam angle (°)
-    volatile float targetMapKpa   = NAN;  // 223050
-    volatile float battTempC      = NAN;  // 22309A
-    volatile float damRatio       = NAN;  // 2210B1 — dynamic advance multiplier (0–1.0)
+    volatile float damRatio       = NAN;  // 2210B1 — dynamic advance multiplier (0–1.0+)
     volatile float cvtTempC       = NAN;  // 2210D2 @ TCU 7E1 — confirmed dynamic (byte - 50 °C)
     volatile float fuelLevelPct   = NAN;  // 012F
+    volatile char  shiftPos[4]    = "";   // PRNDL: "P"/"R"/"N"/"D" (221093+221095 @ TCU 7E1)
+
+    // ── Mode 22 injection (7E0/7E8) ──────────────────────────────────────────
+    volatile float injDutyPct     = NAN;  // 2210C1 — injection duty cycle %
+    volatile float injPulseMs     = NAN;  // 2210B4 — injection pulse width ms
 
     // ── Derived getters ──────────────────────────────────────────────────────
-    float speedMph()     const { return speedKph  * 0.621371f; }
-    float coolantF()     const { return coolantC  * 9.0f/5.0f + 32.0f; }
-    float oilTempF()     const { return oilTempC  * 9.0f/5.0f + 32.0f; }
-    float catTempF()     const { return catTempC  * 9.0f/5.0f + 32.0f; }
-    float cvtTempF()     const { return cvtTempC  * 9.0f/5.0f + 32.0f; }
-    float battTempF()    const { return battTempC * 9.0f/5.0f + 32.0f; }
-    float mapPsi()       const { return mapKpa       / 6.89476f; }
-    float targetMapPsi() const { return targetMapKpa / 6.89476f; }
-    float baroPsi()      const { return baroKpa    / 6.89476f; }
-    float iatF()         const { return iatC       * 9.0f/5.0f + 32.0f; }
+    float speedMph()     const { return speedKph * 0.621371f; }
+    float coolantF()     const { return coolantC * 9.0f/5.0f + 32.0f; }
+    float oilTempF()     const { return oilTempC * 9.0f/5.0f + 32.0f; }
+    float catTempF()     const { return catTempC * 9.0f/5.0f + 32.0f; }
+    float cvtTempF()     const { return cvtTempC * 9.0f/5.0f + 32.0f; }
+    float mapPsi()       const { return mapKpa   / 6.89476f; }
+    float baroPsi()      const { return baroKpa  / 6.89476f; }
 
     /** Boost psi: MAP minus barometric pressure. */
     float boostPsi() const {
@@ -112,34 +110,67 @@ struct DashData {
         return (mapEst - baroKpa) / 6.89476f;
     }
 
+    // ── Running trip averages (Welford's online algorithm) ───────────────────
+    volatile float avgRpm         = NAN;
+    volatile float avgSpeedMph    = NAN;
+    volatile float avgBoostPsi    = NAN;
+    volatile float avgLoadPct     = NAN;
+    volatile float avgCoolantF    = NAN;
+    volatile float avgThrottlePct = NAN;
+    volatile float avgStftPct     = NAN;
+    volatile float avgMafGs       = NAN;
+    volatile float avgEstHp       = NAN;
+    volatile int   avgSampleCount = 0;
+
+    void updateAverages() {
+        avgSampleCount++;
+        int n = avgSampleCount;
+        if (!isnan(rpm))      avgRpm          = _wel(avgRpm,         rpm,         n);
+        if (!isnan(speedKph)) avgSpeedMph     = _wel(avgSpeedMph,    speedMph(),  n);
+        float b = boostPsi();
+        if (!isnan(b))        avgBoostPsi     = _wel(avgBoostPsi,    b,           n);
+        if (!isnan(loadPct))  avgLoadPct      = _wel(avgLoadPct,     loadPct,     n);
+        if (!isnan(coolantC)) avgCoolantF     = _wel(avgCoolantF,    coolantF(),  n);
+        if (!isnan(pedalPct)) avgThrottlePct  = _wel(avgThrottlePct, pedalPct,    n);
+        if (!isnan(stftPct))  avgStftPct      = _wel(avgStftPct,     stftPct,     n);
+        if (!isnan(mafGs))    avgMafGs        = _wel(avgMafGs,       mafGs,       n);
+        float hp = estHp();
+        if (!isnan(hp))       avgEstHp        = _wel(avgEstHp,       hp,          n);
+    }
+
+    void resetAverages() {
+        avgRpm = NAN; avgSpeedMph = NAN; avgBoostPsi = NAN;
+        avgLoadPct = NAN; avgCoolantF = NAN; avgThrottlePct = NAN;
+        avgStftPct = NAN; avgMafGs = NAN; avgEstHp = NAN;
+        avgSampleCount = 0;
+    }
+
     // ── Knock session tracking ────────────────────────────────────────────────
     volatile int knockEventCount = 0;
     void recordKnockEvent() {
-        if (!isnan(knockCorr) && knockCorr < -2.5f) knockEventCount++;
+        // knockCorr (223018) not supported on this ECU — always NaN; counter stays 0.
     }
 
     // ── Peak values ──────────────────────────────────────────────────────────
-    volatile float peakBoostPsi   = NAN;
-    volatile float peakRpm        = NAN;
-    volatile float peakTimingDeg  = NAN;
-    volatile float peakLoadPct    = NAN;
-    volatile float peakSpeedMph   = NAN;
-    volatile float worstKnockCorr = NAN;
-    volatile float peakMafGs      = NAN;
-    volatile float peakEstHp      = NAN;
-    volatile float peakCatTempF   = NAN;
-    volatile float peakCvtTempF   = NAN;
+    volatile float peakBoostPsi  = NAN;
+    volatile float peakRpm       = NAN;
+    volatile float peakTimingDeg = NAN;
+    volatile float peakLoadPct   = NAN;
+    volatile float peakSpeedMph  = NAN;
+    volatile float peakMafGs     = NAN;
+    volatile float peakEstHp     = NAN;
+    volatile float peakCatTempF  = NAN;
+    volatile float peakCvtTempF  = NAN;
 
     void updatePeaks() {
         float b = boostPsi();
         if (!isnan(b)            && (isnan(peakBoostPsi)   || b          > peakBoostPsi))   peakBoostPsi   = b;
-        if (!isnan(rpm)          && (isnan(peakRpm)         || rpm        > peakRpm))         peakRpm        = rpm;
-        if (!isnan(timingDeg)    && (isnan(peakTimingDeg)   || timingDeg  > peakTimingDeg))   peakTimingDeg  = timingDeg;
-        if (!isnan(loadPct)      && (isnan(peakLoadPct)     || loadPct    > peakLoadPct))     peakLoadPct    = loadPct;
+        if (!isnan(rpm)       && (isnan(peakRpm)       || rpm       > peakRpm))       peakRpm       = rpm;
+        if (!isnan(timingDeg) && (isnan(peakTimingDeg) || timingDeg > peakTimingDeg)) peakTimingDeg = timingDeg;
+        if (!isnan(loadPct)   && (isnan(peakLoadPct)   || loadPct   > peakLoadPct))   peakLoadPct   = loadPct;
         float s = speedMph();
-        if (!isnan(s)            && (isnan(peakSpeedMph)    || s          > peakSpeedMph))    peakSpeedMph   = s;
-        if (!isnan(knockCorr)    && (isnan(worstKnockCorr)  || knockCorr  < worstKnockCorr))  worstKnockCorr = knockCorr;
-        if (!isnan(mafGs)        && (isnan(peakMafGs)       || mafGs      > peakMafGs))       peakMafGs      = mafGs;
+        if (!isnan(s)         && (isnan(peakSpeedMph)  || s         > peakSpeedMph))  peakSpeedMph  = s;
+        if (!isnan(mafGs)     && (isnan(peakMafGs)     || mafGs     > peakMafGs))     peakMafGs     = mafGs;
         float hp = estHp();
         if (!isnan(hp)           && (isnan(peakEstHp)       || hp         > peakEstHp))       peakEstHp      = hp;
         float ct = catTempF();
@@ -150,10 +181,16 @@ struct DashData {
 
     void resetPeaks() {
         peakBoostPsi = NAN; peakRpm = NAN; peakTimingDeg = NAN;
-        peakLoadPct  = NAN; peakSpeedMph = NAN; worstKnockCorr = NAN;
+        peakLoadPct  = NAN; peakSpeedMph = NAN;
         peakMafGs    = NAN; peakEstHp = NAN; peakCatTempF = NAN;
         peakCvtTempF = NAN;
         knockEventCount = 0;
+        resetAverages();
+    }
+
+private:
+    static float _wel(float cur, float newV, int n) {
+        return isnan(cur) ? newV : cur + (newV - cur) / (float)n;
     }
 };
 

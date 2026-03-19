@@ -188,13 +188,15 @@ void OBDManager::pollLoop() {
             parseFuelLevel(sendCmd("012F"));
             parseBattery(sendCmd("ATRV"));
 
-            setHeader("7E0", "7E8");
-            parseBattTemp(sendCmdTimeout("22309A", CMD_TIMEOUT_SLOW));
-
-            // CVT temp: PID 2210D2 on TCU (7E1/7E9), formula: byte - 50 °C
+            // CVT temp + shift selector — TCU (7E1/7E9).
             // Use setHeaderForce — cheap ELM clones silently drop ATCRA on ATSH change.
             setHeaderForce("7E1", "7E9");
             parseCVTTemp(sendCmdTimeout("2210D2", CMD_TIMEOUT_SLOW));
+            // Shift selector: 221093 (primary) + 221095 (secondary).
+            // Header already set to 7E1/7E9; no extra ATSH needed.
+            String r93 = sendCmdTimeout("221093", CMD_TIMEOUT_SLOW);
+            String r95 = sendCmdTimeout("221095", CMD_TIMEOUT_SLOW);
+            parseShiftSelector(r93, r95);
 
             // Roughness polled when on ENGINE VITALS (page 4) or ROUGHNESS (page 5).
             // Switch back to ECU header for roughness (7E0/7E8).
@@ -207,13 +209,16 @@ void OBDManager::pollLoop() {
             }
         }
 
-        // ── TIER 3d: DAM — offset 7 in the 10-loop window ─────────────────
+        // ── TIER 3d: DAM + injection — offset 7 in the 10-loop window ────────
         if (loopCount % 10 == 7) {
             setHeader("7E0", "7E8");
             parseDAM(sendCmdTimeout("2210B1", CMD_TIMEOUT_SLOW));
+            parseInjDutyCycle(sendCmdTimeout("2210C1", CMD_TIMEOUT_SLOW));
+            parseInjPulse(sendCmdTimeout("2210B4", CMD_TIMEOUT_SLOW));
         }
 
         _data.updatePeaks();
+        _data.updateAverages();
         _data.recordKnockEvent();
 
         loopCount++;
@@ -501,12 +506,6 @@ void OBDManager::parseVvtAngleL(const String& r) {
     _data.vvtAngleL = (float)(int8_t)a / 2.0f;
 }
 
-void OBDManager::parseBattTemp(const String& r) {
-    if (isError(r)) return;
-    int a = m22byte(r, 0); if (a < 0) return;
-    _data.battTempC = a - 40.0f;
-}
-
 void OBDManager::parseCVTTemp(const String& r) {
     // 2210D2 on TCU (7E1/7E9) — confirmed dynamic across three drive sessions.
     // Formula: byte - 50 → °C.  Range check: 0x63=49°C, 0x7D=75°C, 0x81=79°C all verified.
@@ -518,8 +517,8 @@ void OBDManager::parseCVTTemp(const String& r) {
 
 void OBDManager::parseDAM(const String& r) {
     // 2210B1 — dynamic advance multiplier.
-    // FA20DIT encodes as 0–16 counts; 16 = 1.0 (full advance).
-    // Observed: 0x00, 0x01, 0x03, 0x0C across sessions.
+    // FA20DIT encodes as 0–16+ counts; 16 = 1.0 (full advance). Values can exceed 1.0.
+    // Observed: 0x00–0x1E (30) across sessions; highway cruise often 0x1E = 1.875.
     if (isError(r)) return;
     int a = m22byte(r, 0); if (a < 0) return;
     _data.damRatio = a / 16.0f;
@@ -534,6 +533,41 @@ void OBDManager::parseRoughness(const String& r, int cyl) {
         case 3: _data.rough3 = (float)a; break;
         case 4: _data.rough4 = (float)a; break;
     }
+}
+
+void OBDManager::parseInjDutyCycle(const String& r) {
+    // 2210C1 — injection duty cycle; raw byte / 2 → %
+    if (isError(r)) return;
+    int a = m22byte(r, 0); if (a < 0) return;
+    _data.injDutyPct = a / 2.0f;
+}
+
+void OBDManager::parseInjPulse(const String& r) {
+    // 2210B4 — injection pulse width; raw word / 1000 → ms (unverified scale)
+    if (isError(r)) return;
+    int w = m22word(r); if (w < 0) return;
+    _data.injPulseMs = w / 1000.0f;
+}
+
+void OBDManager::parseShiftSelector(const String& r93, const String& r95) {
+    // Gear encoding confirmed from sfe_20260319_083507.csv (22-min highway drive):
+    //   D: 093=0x04, 095=0x20  |  P: 093=0x00, 095=0x00
+    //   N: 093=0x00, 095=0x20  |  R: 093=0x06, 095=0x21
+    // ELM clone guard: reject frames lacking the expected PID echo (621093/621095).
+    // Cheap clones sometimes return a stale 2210D2 response in the 221093 buffer;
+    // e.g. "6210D286" instead of "62109304" — that byte has bit1 set → wrongly decoded R.
+    String s93 = strip(r93);
+    String s95 = strip(r95);
+    bool ok93 = !isError(r93) && s93.indexOf("621093") >= 0;
+    bool ok95 = !isError(r95) && s95.indexOf("621095") >= 0;
+    if (!ok93 || !ok95) return;  // keep last known shiftPos
+    int a93 = m22byte(r93, 0);
+    int a95 = m22byte(r95, 0);
+    if (a93 < 0 || a95 < 0) return;
+    if      ((a93 & 0x02) != 0) snprintf((char*)_data.shiftPos, sizeof(_data.shiftPos), "R");
+    else if ((a93 & 0x04) != 0) snprintf((char*)_data.shiftPos, sizeof(_data.shiftPos), "D");
+    else if ((a95 & 0x20) != 0) snprintf((char*)_data.shiftPos, sizeof(_data.shiftPos), "N");
+    else                         snprintf((char*)_data.shiftPos, sizeof(_data.shiftPos), "P");
 }
 
 // ── Utility ─────────────────────────────────────────────────────────────────
