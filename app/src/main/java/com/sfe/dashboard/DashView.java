@@ -887,12 +887,9 @@ public class DashView extends SurfaceView implements SurfaceHolder.Callback {
         c.drawText(gear, LW / 2f, SY + SH - 2f, textP);
     }
 
-    /** Decode current gear from shift selector PIDs.
-     *  Only Park is confirmed (221095 bit 5 = 0x20); all other positions return "---". */
+    /** Return current gear position from confirmed PRNDL decode, or "---" if no valid reading. */
     private String decodeGear(DashData d) {
-        float r95 = d.shiftRaw95;
-        if (!Float.isNaN(r95) && ((int) r95 & 0x20) != 0) return "P";
-        return "---";
+        return d.shiftPos != null ? d.shiftPos : "---";
     }
 
     // ── PAGE HEADER ───────────────────────────────────────────────

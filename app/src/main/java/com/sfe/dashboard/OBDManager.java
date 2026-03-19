@@ -346,13 +346,12 @@ public class OBDManager {
                 // when ATSH changes (e.g. 7DF→7E1), leaving the filter stale.
                 setHeaderForce("7E1", "7E9");
                 parseCVTTemp(sendM22("2210D2", CMD_TIMEOUT_SLOW));
-                // Shift selector trial PIDs — raw bytes logged for gear-position decoding.
-                // 221093: scan data shows 0x00 mid-drive / 0x04 parked (bit 2 = Park?).
-                // 221095: scan data shows 0x00 mid-drive / 0x20 parked (bit 5 = Park?).
-                // 221154: confirmed 7F2231 (requestOutOfRange) on 100% of polls — REMOVED.
-                // Need a gear-cycle log (P→R→N→D→P) to confirm encoding.
-                parseShiftSelector(sendM22("221093", CMD_TIMEOUT_SLOW));
-                parseShiftSelector2(sendM22("221095", CMD_TIMEOUT_SLOW));
+                // Shift selector — confirmed encoding from sfe_20260318_205734.csv (R→P→N→D):
+                //   R: 093=0x06, 095=0x21 | P: 093=0x04, 095=0x20
+                //   N: 093=0x00, 095=0x20 | D: 093=0x00, 095=0x00
+                // S encoding unknown. Both PIDs needed: 095 distinguishes N from D.
+                parseShiftSelector(sendM22("221093", CMD_TIMEOUT_SLOW),
+                                   sendM22("221095", CMD_TIMEOUT_SLOW));
                 setHeaderForce("7E0", "7E8");
             }
 
@@ -981,20 +980,24 @@ public class OBDManager {
         if (v > -30f && v < 200f) data.cvtTempC = v;
     }
 
-    private void parseShiftSelector(String r) {
-        // 221093 on TCU (7E1) — trial selector PID.
-        // Scan data: 0x00 mid-drive, 0x04 parked (bit 2 may indicate Park).
-        if (isError(r)) { data.shiftRaw93 = Float.NaN; return; }
-        int a = m22byte(r, 0); if (a < 0) { data.shiftRaw93 = Float.NaN; return; }
-        data.shiftRaw93 = a;
-    }
-
-    private void parseShiftSelector2(String r) {
-        // 221095 on TCU (7E1) — trial selector PID.
-        // Scan data: 0x00 mid-drive, 0x20 parked (bit 5 may indicate Park).
-        if (isError(r)) { data.shiftRaw95 = Float.NaN; return; }
-        int a = m22byte(r, 0); if (a < 0) { data.shiftRaw95 = Float.NaN; return; }
-        data.shiftRaw95 = a;
+    private void parseShiftSelector(String r93, String r95) {
+        // 221093 + 221095 on TCU (7E1) — confirmed gear encoding (sfe_20260318_205734.csv):
+        //   R: 093=0x06, 095=0x21 | P: 093=0x04, 095=0x20
+        //   N: 093=0x00, 095=0x20 | D: 093=0x00, 095=0x00
+        // Use 095 as the primary discriminator; 093 differentiates P vs R.
+        // If either PID errors we keep the last known value (don't clear).
+        int a93 = isError(r93) ? -1 : m22byte(r93, 0);
+        int a95 = isError(r95) ? -1 : m22byte(r95, 0);
+        if (a93 < 0 || a95 < 0) return; // keep last known shiftPos
+        if ((a95 & 0x20) == 0) {
+            data.shiftPos = "D"; // bit5 clear → Drive (or S, encoding unknown)
+        } else if ((a93 & 0x02) != 0) {
+            data.shiftPos = "R"; // bit1 of 093 set → Reverse
+        } else if ((a93 & 0x04) != 0) {
+            data.shiftPos = "P"; // bit2 of 093 set (but not bit1) → Park
+        } else {
+            data.shiftPos = "N"; // bit5 of 095 set, 093=0x00 → Neutral
+        }
     }
 
     // ── Mode 22 ECU — ScanGauge extended parsers ──────────────────

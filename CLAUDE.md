@@ -80,8 +80,19 @@ Sources: pid_scan_20260315_160213.csv (mid-drive), pid_scan_20260316_083419.csv 
 | 221139 | 060F | 06C5 | 0603 | word; possible shaft speed |
 | 22113A | 05DC | 076A | 06C6 | word; possible shaft speed |
 | 221152 | 0EC7 | 0EC9 | 0EC9 | word = ~3785; nearly constant — note 22300E/2230D0 did NOT respond |
-| **221093** | 00 | 04 | 04 | **SHIFT SELECTOR CANDIDATE** — 0x00 mid-drive, 0x04 both parked scans. Bit 2 may = Park. Currently trialled in OBDManager alongside 2210D2. Encoding TBD from gear-cycle log. |
-| **221095** | 00 | 20 | 20 | **SHIFT SELECTOR CANDIDATE** — 0x00 mid-drive, 0x20 both parked scans. Bit 5 may = Park. Currently trialled alongside 221093. |
+| **221093** | 00 | 04 | 04 | **SHIFT SELECTOR (primary)** — used with 221095 for PRNDL decode. See encoding table below. |
+| **221095** | 00 | 20 | 20 | **SHIFT SELECTOR (secondary)** — distinguishes N from D (bit 5). See encoding table below. |
+
+### Confirmed PRNDL Encoding (sfe_20260318_205734.csv, R→P→N→D pass)
+| Gear | 221093 | 221095 | Key bits |
+|------|--------|--------|----------|
+| R    | 0x06   | 0x21   | 093 bit1+bit2 set; 095 bit0+bit5 set |
+| P    | 0x04   | 0x20   | 093 bit2 set (not bit1); 095 bit5 set |
+| N    | 0x00   | 0x20   | 093 = 0; 095 bit5 set |
+| D    | 0x00   | 0x00   | both 0 (confirmed mid-drive scans) |
+| S    | ?      | ?      | not captured — encoding unknown |
+
+Decode logic (OBDManager.parseShiftSelector): if `095 bit5` clear → D; elif `093 bit1` set → R; elif `093 bit2` set → P; else N. Stored as `DashData.shiftPos` (String "P"/"R"/"N"/"D", null = no reading).
 
 ## Known Wrong PIDs (do not use)
 - `2210AF` for knock correction — it's engine oil temperature.
