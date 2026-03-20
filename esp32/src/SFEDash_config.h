@@ -79,7 +79,7 @@
 
 // ── SPI clock speeds ──────────────────────────────────────────────────────────
 #ifndef SPI_FREQUENCY
-#define SPI_FREQUENCY      40000000
+#define SPI_FREQUENCY      27000000
 #endif
 #ifndef SPI_READ_FREQUENCY
 #define SPI_READ_FREQUENCY 20000000
