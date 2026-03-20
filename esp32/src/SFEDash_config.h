@@ -85,6 +85,12 @@
 #define SPI_READ_FREQUENCY 20000000
 #endif
 
+// ── No touchscreen on this build ─────────────────────────────────────────────
+// Defining TOUCH_CS as -1 suppresses TFT_eSPI's "TOUCH_CS not defined" warning.
+#ifndef TOUCH_CS
+#define TOUCH_CS -1
+#endif
+
 // ── App config ────────────────────────────────────────────────────────────────
 #ifndef IR_RECV_PIN
 #define IR_RECV_PIN 34

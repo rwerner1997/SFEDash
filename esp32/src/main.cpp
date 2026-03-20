@@ -55,8 +55,6 @@ static void handleIR(uint64_t code) {
     Serial.printf("[IR] received: 0x%08llX\n", code);
 #endif
 
-    if (code == REPEAT) return;  // ignore held-key repeat (except paging, handled below)
-
     if      (code == IR_LEFT)  g_view.prevPage();
     else if (code == IR_RIGHT) g_view.nextPage();
     else if (code == IR_UP)    g_view.prevTheme();
@@ -83,7 +81,8 @@ static void renderTask(void*) {
     for (;;) {
         // Poll IR receiver (non-blocking)
         if (g_ir.decode(&g_irResult)) {
-            if (g_irResult.decode_type == NEC || g_irResult.decode_type == NEC_LIKE) {
+            if (!g_irResult.repeat &&
+                (g_irResult.decode_type == NEC || g_irResult.decode_type == NEC_LIKE)) {
                 handleIR(g_irResult.value);
             }
             g_ir.resume();
