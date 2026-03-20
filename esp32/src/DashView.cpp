@@ -237,8 +237,8 @@ void DashView::drawDriveMode() {
     Tile tiles[] = {
         { "BOOST", _data.boostPsiEst(), "%.1f", " psi" },
         { "LOAD",  _data.loadPct,       "%.0f", "%"    },
-        { "OIL",   _data.oilTempF(),    "%.0f", "\xB0F"},
-        { "CVT",   _data.cvtTempF(),    "%.0f", "\xB0F"},
+        { "OIL",   _data.oilTempF(),    "%.0f", "\xB0""F"},
+        { "CVT",   _data.cvtTempF(),    "%.0f", "\xB0""F"},
     };
     int tw = (SCREEN_W - 20) / 4, tx = 10;
     for (auto& t : tiles) {
@@ -314,9 +314,9 @@ void DashView::drawTempsPage() {
                  theme().accent, 220, 240);
 
     int tw = 85, th = 56, ty = 202, tx0 = 5;
-    drawTile(tx0,       ty, tw, th, "OIL",  _data.oilTempF(),   "%.0f", "\xB0F");
-    drawTile(tx0 + 90,  ty, tw, th, "CVT",  _data.cvtTempF(),   "%.0f", "\xB0F");
-    drawTile(tx0 + 180, ty, tw, th, "CAT",  _data.catTempF(),   "%.0f", "\xB0F");
+    drawTile(tx0,       ty, tw, th, "OIL",  _data.oilTempF(),   "%.0f", "\xB0""F");
+    drawTile(tx0 + 90,  ty, tw, th, "CVT",  _data.cvtTempF(),   "%.0f", "\xB0""F");
+    drawTile(tx0 + 180, ty, tw, th, "CAT",  _data.catTempF(),   "%.0f", "\xB0""F");
     drawTile(tx0 + 270, ty, tw, th, "FUEL", _data.fuelLevelPct, "%.0f", "%");
 }
 
@@ -377,7 +377,7 @@ void DashView::drawEngineVitalsPage() {
     int tw = 85, th = 48, ty = 230, tx0 = 5;
     drawTile(tx0,       ty, tw, th, "LOAD",   _data.loadPct,   "%.0f",  "%");
     drawTile(tx0 + 90,  ty, tw, th, "THROTTL",_data.throttlePct,"%.0f", "%");
-    drawTile(tx0 + 180, ty, tw, th, "OIL",    _data.oilTempF(), "%.0f", "\xB0F");
+    drawTile(tx0 + 180, ty, tw, th, "OIL",    _data.oilTempF(), "%.0f", "\xB0""F");
     drawTile(tx0 + 270, ty, tw, th, "VVT-L",  _data.vvtAngleL,  "%.1f", "\xB0");
 }
 
@@ -579,10 +579,10 @@ void DashView::drawSessionPage() {
         { "PEAK TIMING",  _data.peakTimingDeg,             "%.1f",  "\xB0" },
         { "PEAK LOAD",    _data.peakLoadPct,                "%.0f",  "%"   },
         { "PEAK SPEED",   _data.peakSpeedMph,               "%.0f",  " mph" },
-        { "PEAK CVT",     _data.peakCvtTempF,               "%.0f",  "\xB0F"},
+        { "PEAK CVT",     _data.peakCvtTempF,               "%.0f",  "\xB0""F"},
         { "PEAK MAF",     _data.peakMafGs,                   "%.1f",  " g/s" },
         { "PEAK HP",      _data.peakEstHp,                   "%.0f",  " hp"  },
-        { "PEAK CAT",     _data.peakCatTempF,                "%.0f",  "\xB0F"},
+        { "PEAK CAT",     _data.peakCatTempF,                "%.0f",  "\xB0""F"},
         { "KNOCK EVENTS", (float)_data.knockEventCount,     "%.0f",  ""     },
     };
 
@@ -656,7 +656,7 @@ void DashView::drawStatusBar() {
     _tft.setTextFont(1);
     _tft.setTextDatum(ML_DATUM);
     _tft.setTextColor(_data.connected ? COL_GOOD : COL_WARN, 0x1082);
-    _tft.drawString(_data.btStatus, 6, y + STATUS_H/2);
+    _tft.drawString((const char*)_data.btStatus, 6, y + STATUS_H/2);
 
     // Gear position badge
     {
