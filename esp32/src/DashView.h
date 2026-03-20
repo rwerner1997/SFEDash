@@ -1,4 +1,5 @@
 #pragma once
+#include "SFEDash_config.h"
 #include <TFT_eSPI.h>
 #include "DashData.h"
 

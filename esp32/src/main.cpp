@@ -1,4 +1,5 @@
 #include <Arduino.h>
+#include "SFEDash_config.h"
 #include <IRrecv.h>
 #include <IRutils.h>
 #include "DashData.h"

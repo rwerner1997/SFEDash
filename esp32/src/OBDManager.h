@@ -1,5 +1,6 @@
 #pragma once
 #include <Arduino.h>
+#include "SFEDash_config.h"
 #include <BluetoothSerial.h>
 #include "DashData.h"
 
