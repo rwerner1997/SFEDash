@@ -1,11 +1,8 @@
 #pragma once
 #include <Arduino.h>
+#include "SFEDash_config.h"
 #include <BluetoothSerial.h>
 #include "DashData.h"
-
-#ifndef BT_DEVICE_NAME
-#define BT_DEVICE_NAME "OBDII"
-#endif
 
 // ─────────────────────────────────────────────────────────────────────────────
 // OBDManager — Bluetooth Classic SPP master → Veepeak OBDII (ELM327)
