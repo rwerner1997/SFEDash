@@ -123,7 +123,7 @@ struct DashData {
     volatile int   avgSampleCount = 0;
 
     void updateAverages() {
-        avgSampleCount++;
+        avgSampleCount = avgSampleCount + 1;
         int n = avgSampleCount;
         if (!isnan(rpm))      avgRpm          = _wel(avgRpm,         rpm,         n);
         if (!isnan(speedKph)) avgSpeedMph     = _wel(avgSpeedMph,    speedMph(),  n);
